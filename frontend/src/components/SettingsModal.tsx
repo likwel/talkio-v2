@@ -1,17 +1,30 @@
 import { FormEvent, ReactNode, useState } from 'react';
 import clsx from 'clsx';
 import Modal from '@/components/Modal';
+import ColorPicker from '@/components/ColorPicker';
+import AutomationsPanel from '@/components/AutomationsPanel';
 import { api } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme, type ThemePref } from '@/context/ThemeContext';
 import { useDialog } from '@/context/DialogContext';
-import { IconPerson, IconPalette, IconShield, IconLogout, IconTick, IconLight, IconDark, IconToday } from '@/lib/icons';
+import {
+  IconPerson,
+  IconPalette,
+  IconShield,
+  IconLogout,
+  IconTick,
+  IconLight,
+  IconDark,
+  IconToday,
+  IconSettings,
+} from '@/lib/icons';
 
-type Tab = 'profil' | 'apparence' | 'securite' | 'compte';
+type Tab = 'profil' | 'apparence' | 'automatisation' | 'securite' | 'compte';
 
 const TABS: { id: Tab; label: string; Icon: typeof IconPerson }[] = [
   { id: 'profil', label: 'Profil', Icon: IconPerson },
   { id: 'apparence', label: 'Apparence', Icon: IconPalette },
+  { id: 'automatisation', label: 'Automatisation', Icon: IconSettings },
   { id: 'securite', label: 'Securite', Icon: IconShield },
   { id: 'compte', label: 'Compte', Icon: IconLogout },
 ];
@@ -30,7 +43,7 @@ export default function SettingsModal({ open, onClose }: { open: boolean; onClos
               className={clsx(
                 'flex shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium transition sm:w-full',
                 tab === id
-                  ? 'bg-brand-500/12 text-brand-700 dark:text-brand-300'
+                  ? 'accent-active'
                   : 'text-[var(--text-dim)] hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/5',
               )}
             >
@@ -42,6 +55,7 @@ export default function SettingsModal({ open, onClose }: { open: boolean; onClos
         <div className="min-w-0 flex-1 border-t border-[var(--outline)] pt-4 sm:border-l sm:border-t-0 sm:pl-5 sm:pt-0">
           {tab === 'profil' && <ProfileTab />}
           {tab === 'apparence' && <AppearanceTab />}
+          {tab === 'automatisation' && <AutomationsPanel />}
           {tab === 'securite' && <SecurityTab />}
           {tab === 'compte' && <AccountTab onClose={onClose} />}
         </div>
@@ -117,33 +131,42 @@ function ProfileTab() {
 }
 
 function AppearanceTab() {
-  const { pref, setPref } = useTheme();
+  const { pref, setPref, accent, setAccent } = useTheme();
   const opts: { id: ThemePref; label: string; Icon: typeof IconLight }[] = [
     { id: 'light', label: 'Clair', Icon: IconLight },
     { id: 'dark', label: 'Sombre', Icon: IconDark },
     { id: 'system', label: 'Systeme', Icon: IconToday },
   ];
   return (
-    <div className="space-y-4">
-      <h3 className="font-display text-[15px] font-bold">Apparence</h3>
-      <p className="text-sm text-[var(--text-dim)]">Choisissez le theme de l'interface.</p>
-      <div className="grid grid-cols-3 gap-3">
-        {opts.map(({ id, label, Icon }) => (
-          <button
-            key={id}
-            onClick={() => setPref(id)}
-            className={clsx(
-              'flex flex-col items-center gap-2 rounded-xl border p-4 text-sm font-medium transition',
-              pref === id
-                ? 'border-[var(--accent)] bg-brand-500/10 text-brand-700 dark:text-brand-300'
-                : 'border-[var(--outline)] text-[var(--text-dim)] hover:bg-black/5 dark:hover:bg-white/5',
-            )}
-          >
-            <Icon className="h-6 w-6" />
-            {label}
-            {pref === id && <IconTick className="h-4 w-4" />}
-          </button>
-        ))}
+    <div className="space-y-5">
+      <div>
+        <h3 className="font-display text-[15px] font-bold">Theme</h3>
+        <div className="mt-3 grid grid-cols-3 gap-3">
+          {opts.map(({ id, label, Icon }) => (
+            <button
+              key={id}
+              onClick={() => setPref(id)}
+              className={clsx(
+                'flex flex-col items-center gap-2 rounded-xl border p-4 text-sm font-medium transition',
+                pref === id
+                  ? 'border-[var(--accent)] accent-active'
+                  : 'border-[var(--outline)] text-[var(--text-dim)] hover:bg-black/5 dark:hover:bg-white/5',
+              )}
+            >
+              <Icon className="h-6 w-6" />
+              {label}
+              {pref === id && <IconTick className="h-4 w-4" />}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <h3 className="font-display text-[15px] font-bold">Couleur d'accent</h3>
+        <p className="mb-3 text-sm text-[var(--text-dim)]">
+          Appliquee a toute l'interface (sauf si un espace impose sa propre couleur).
+        </p>
+        <ColorPicker value={accent} onChange={(hex) => setAccent(hex ?? '#0cae36')} />
       </div>
     </div>
   );

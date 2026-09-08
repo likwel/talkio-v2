@@ -6,13 +6,23 @@ import { prisma } from '../../lib/prisma';
 import { requireWorkspaceMember } from '../../lib/access';
 import { getIO } from '../../realtime/socket';
 import { notFound } from '../../lib/http';
+import { runAutomations } from '../automations/dispatch';
 
 const router = Router();
+
+const DONE_RE = /termin|fini|done|complet|clotur|closed/i;
+const userSel = { id: true, fullName: true, avatarUrl: true } as const;
 
 async function boardWorkspace(boardId: string) {
   const board = await prisma.board.findUnique({ where: { id: boardId } });
   if (!board) throw notFound('Tableau introuvable');
   return board;
+}
+
+function progressFromColumns(columns: { name: string; _count: { cards: number } }[]) {
+  const total = columns.reduce((s, c) => s + c._count.cards, 0);
+  const done = columns.filter((c) => DONE_RE.test(c.name)).reduce((s, c) => s + c._count.cards, 0);
+  return { total, done, pct: total ? Math.round((done / total) * 100) : 0 };
 }
 
 // --- Boards -----------------------------------------------------------------
@@ -25,29 +35,40 @@ router.get(
     await requireWorkspaceMember(req.user!.id, workspaceId);
     const boards = await prisma.board.findMany({
       where: { workspaceId },
-      include: { _count: { select: { columns: true } } },
+      include: {
+        lead: { select: userSel },
+        columns: { select: { name: true, _count: { select: { cards: true } } } },
+        _count: { select: { members: true, columns: true } },
+      },
       orderBy: { createdAt: 'asc' },
     });
-    res.json(boards);
+    res.json(
+      boards.map(({ columns, ...b }) => ({ ...b, progress: progressFromColumns(columns) })),
+    );
   }),
 );
 
+const boardBody = z.object({
+  name: z.string().min(1).max(120).optional(),
+  description: z.string().max(2000).nullable().optional(),
+  status: z.enum(['ACTIVE', 'ON_HOLD', 'COMPLETED', 'ARCHIVED']).optional(),
+  color: z.string().regex(/^#[0-9a-f]{6}$/i).nullable().optional(),
+  startDate: z.coerce.date().nullable().optional(),
+  endDate: z.coerce.date().nullable().optional(),
+  leadId: z.string().nullable().optional(),
+});
+
 router.post(
   '/',
-  validate(
-    z.object({
-      workspaceId: z.string(),
-      name: z.string().min(1),
-      description: z.string().optional(),
-    }),
-  ),
+  validate(boardBody.extend({ workspaceId: z.string(), name: z.string().min(1) })),
   asyncHandler(async (req, res) => {
     await requireWorkspaceMember(req.user!.id, req.body.workspaceId);
+    const { workspaceId, ...rest } = req.body;
     const board = await prisma.board.create({
       data: {
-        workspaceId: req.body.workspaceId,
-        name: req.body.name,
-        description: req.body.description,
+        workspaceId,
+        ...rest,
+        members: { create: { userId: req.user!.id } },
         columns: {
           create: [
             { name: 'A faire', position: 0 },
@@ -62,6 +83,51 @@ router.post(
   }),
 );
 
+router.patch(
+  '/:id',
+  validate(boardBody),
+  asyncHandler(async (req, res) => {
+    const board = await boardWorkspace(req.params.id);
+    await requireWorkspaceMember(req.user!.id, board.workspaceId);
+    const updated = await prisma.board.update({
+      where: { id: board.id },
+      data: req.body,
+      include: { lead: { select: userSel } },
+    });
+    getIO()?.to(`board:${board.id}`).emit('board:changed', { boardId: board.id });
+    res.json(updated);
+  }),
+);
+
+router.post(
+  '/:id/members',
+  validate(z.object({ userIds: z.array(z.string()).min(1).max(50) })),
+  asyncHandler(async (req, res) => {
+    const board = await boardWorkspace(req.params.id);
+    await requireWorkspaceMember(req.user!.id, board.workspaceId);
+    await Promise.all(req.body.userIds.map((uid: string) => requireWorkspaceMember(uid, board.workspaceId)));
+    await prisma.boardMember.createMany({
+      data: req.body.userIds.map((userId: string) => ({ boardId: board.id, userId })),
+      skipDuplicates: true,
+    });
+    const members = await prisma.boardMember.findMany({
+      where: { boardId: board.id },
+      include: { user: { select: userSel } },
+    });
+    res.status(201).json(members);
+  }),
+);
+
+router.delete(
+  '/:id/members/:userId',
+  asyncHandler(async (req, res) => {
+    const board = await boardWorkspace(req.params.id);
+    await requireWorkspaceMember(req.user!.id, board.workspaceId);
+    await prisma.boardMember.deleteMany({ where: { boardId: board.id, userId: req.params.userId } });
+    res.status(204).end();
+  }),
+);
+
 router.get(
   '/:id',
   asyncHandler(async (req, res) => {
@@ -70,13 +136,16 @@ router.get(
     const full = await prisma.board.findUnique({
       where: { id: board.id },
       include: {
+        lead: { select: userSel },
+        members: { include: { user: { select: userSel } } },
         columns: {
           orderBy: { position: 'asc' },
           include: {
+            _count: { select: { cards: true } },
             cards: {
               orderBy: { position: 'asc' },
               include: {
-                assignees: { include: { user: { select: { id: true, fullName: true, avatarUrl: true } } } },
+                assignees: { include: { user: { select: userSel } } },
                 _count: { select: { comments: true } },
               },
             },
@@ -84,7 +153,10 @@ router.get(
         },
       },
     });
-    res.json(full);
+    res.json({
+      ...full,
+      progress: progressFromColumns((full?.columns ?? []).map((c) => ({ name: c.name, _count: c._count }))),
+    });
   }),
 );
 
@@ -208,6 +280,17 @@ router.post(
     });
 
     getIO()?.to(`board:${card.column.boardId}`).emit('board:changed', { boardId: card.column.boardId });
+
+    // Automatisation : carte deplacee vers une colonne "termine"
+    const toColumn = await prisma.column.findUnique({ where: { id: toColumnId } });
+    if (toColumn && DONE_RE.test(toColumn.name)) {
+      runAutomations(card.column.board.workspaceId, 'card.moved.done', {
+        card: { title: card.title, id: card.id },
+        board: { name: card.column.board.name, id: card.column.boardId },
+        column: toColumn.name,
+        summary: `Tache terminee : ${card.title} (${card.column.board.name})`,
+      });
+    }
     res.json({ ok: true });
   }),
 );

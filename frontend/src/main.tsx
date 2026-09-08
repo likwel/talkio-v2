@@ -6,6 +6,7 @@ import { AuthProvider } from '@/context/AuthContext';
 import { WorkspaceProvider } from '@/context/WorkspaceContext';
 import { ThemeProvider } from '@/context/ThemeContext';
 import { DialogProvider } from '@/context/DialogContext';
+import { ProfileProvider } from '@/context/ProfileContext';
 import App from './App';
 import './index.css';
 
@@ -21,7 +22,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           <DialogProvider>
             <AuthProvider>
               <WorkspaceProvider>
-                <App />
+                <ProfileProvider>
+                  <App />
+                </ProfileProvider>
               </WorkspaceProvider>
             </AuthProvider>
           </DialogProvider>

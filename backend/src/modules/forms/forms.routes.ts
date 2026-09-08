@@ -5,6 +5,7 @@ import { validate } from '../../middleware/validate';
 import { prisma } from '../../lib/prisma';
 import { requireWorkspaceMember } from '../../lib/access';
 import { badRequest, notFound } from '../../lib/http';
+import { runAutomations } from '../automations/dispatch';
 
 const router = Router();
 
@@ -16,6 +17,11 @@ const fieldSchema = z.object({
   position: z.number().int().default(0),
   options: z.array(z.string()).default([]),
   helpText: z.string().optional(),
+  placeholder: z.string().max(200).optional(),
+  defaultValue: z.string().max(500).optional(),
+  minValue: z.number().nullable().optional(),
+  maxValue: z.number().nullable().optional(),
+  pattern: z.string().max(300).optional(),
 });
 
 async function formOr404(id: string) {
@@ -148,6 +154,18 @@ router.post(
       },
       include: { answers: true },
     });
+
+    const submitter = await prisma.user.findUnique({ where: { id: req.user!.id }, select: { fullName: true } });
+    const preview = form.fields
+      .slice(0, 3)
+      .map((f) => `${f.label}: ${req.body.answers[f.key] ?? '—'}`)
+      .join(' · ');
+    runAutomations(form.workspaceId, 'form.response.created', {
+      form: { title: form.title, id: form.id },
+      response: { id: response.id, by: submitter?.fullName ?? 'Anonyme' },
+      summary: `Nouvelle reponse a « ${form.title} » par ${submitter?.fullName ?? 'Anonyme'} — ${preview}`,
+    });
+
     res.status(201).json(response);
   }),
 );

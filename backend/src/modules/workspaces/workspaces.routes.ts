@@ -4,7 +4,7 @@ import { asyncHandler } from '../../lib/asyncHandler';
 import { validate } from '../../middleware/validate';
 import { prisma } from '../../lib/prisma';
 import { requireWorkspaceAdmin, requireWorkspaceMember } from '../../lib/access';
-import { notFound } from '../../lib/http';
+import { badRequest, notFound } from '../../lib/http';
 
 const router = Router();
 
@@ -74,18 +74,57 @@ router.get(
   }),
 );
 
+router.patch(
+  '/:id',
+  validate(
+    z.object({
+      name: z.string().min(2).max(80).optional(),
+      color: z
+        .string()
+        .regex(/^#[0-9a-f]{6}$/i)
+        .nullable()
+        .optional(),
+    }),
+  ),
+  asyncHandler(async (req, res) => {
+    await requireWorkspaceAdmin(req.user!.id, req.params.id);
+    const workspace = await prisma.workspace.update({
+      where: { id: req.params.id },
+      data: {
+        ...(req.body.name !== undefined ? { name: req.body.name } : {}),
+        ...(req.body.color !== undefined ? { color: req.body.color } : {}),
+      },
+    });
+    res.json(workspace);
+  }),
+);
+
 router.post(
   '/:id/members',
   validate(z.object({ email: z.string().email(), role: z.enum(['ADMIN', 'MEMBER', 'GUEST']).default('MEMBER') })),
   asyncHandler(async (req, res) => {
     await requireWorkspaceAdmin(req.user!.id, req.params.id);
-    const user = await prisma.user.findUnique({ where: { email: req.body.email } });
+    const user = await prisma.user.findUnique({ where: { email: req.body.email.toLowerCase() } });
     if (!user) throw notFound('Aucun utilisateur avec cet email');
-    const member = await prisma.workspaceMember.create({
-      data: { workspaceId: req.params.id, userId: user.id, role: req.body.role },
-      include: { user: { select: { id: true, fullName: true, email: true } } },
+    const member = await prisma.workspaceMember.upsert({
+      where: { workspaceId_userId: { workspaceId: req.params.id, userId: user.id } },
+      update: { role: req.body.role },
+      create: { workspaceId: req.params.id, userId: user.id, role: req.body.role },
+      include: { user: { select: { id: true, fullName: true, email: true, avatarUrl: true } } },
     });
     res.status(201).json(member);
+  }),
+);
+
+router.delete(
+  '/:id/members/:userId',
+  asyncHandler(async (req, res) => {
+    await requireWorkspaceAdmin(req.user!.id, req.params.id);
+    if (req.params.userId === req.user!.id) throw badRequest('Vous ne pouvez pas vous retirer vous-meme');
+    await prisma.workspaceMember.deleteMany({
+      where: { workspaceId: req.params.id, userId: req.params.userId },
+    });
+    res.status(204).end();
   }),
 );
 

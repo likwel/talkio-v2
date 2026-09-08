@@ -14,7 +14,14 @@ export default function FormFill() {
   const [count, setCount] = useState(0);
 
   useEffect(() => {
-    api.get(`/forms/${formId}`).then((r) => setForm(r.data));
+    api.get<FormDef>(`/forms/${formId}`).then((r) => {
+      setForm(r.data);
+      const defaults: Record<string, any> = {};
+      for (const f of r.data.fields) {
+        if (f.defaultValue) defaults[f.key] = f.type === 'NUMBER' ? Number(f.defaultValue) : f.defaultValue;
+      }
+      setValues(defaults);
+    });
   }, [formId]);
 
   function setVal(key: string, value: any) {
@@ -80,6 +87,7 @@ function FieldInput({
     <span className="block text-sm font-medium">
       {field.label}
       {field.required && <span className="text-red-500"> *</span>}
+      {field.helpText && <span className="mt-0.5 block text-xs font-normal text-[var(--text-dim)]">{field.helpText}</span>}
     </span>
   );
 
@@ -88,14 +96,30 @@ function FieldInput({
       return (
         <label className="block">
           {label}
-          <textarea className="input mt-1" rows={3} value={value ?? ''} onChange={(e) => onChange(e.target.value)} required={field.required} />
+          <textarea
+            className="input mt-1"
+            rows={3}
+            placeholder={field.placeholder}
+            value={value ?? ''}
+            onChange={(e) => onChange(e.target.value)}
+            required={field.required}
+          />
         </label>
       );
     case 'NUMBER':
       return (
         <label className="block">
           {label}
-          <input className="input mt-1" type="number" value={value ?? ''} onChange={(e) => onChange(Number(e.target.value))} required={field.required} />
+          <input
+            className="input mt-1"
+            type="number"
+            placeholder={field.placeholder}
+            min={field.minValue ?? undefined}
+            max={field.maxValue ?? undefined}
+            value={value ?? ''}
+            onChange={(e) => onChange(e.target.value === '' ? '' : Number(e.target.value))}
+            required={field.required}
+          />
         </label>
       );
     case 'DATE':
@@ -181,7 +205,14 @@ function FieldInput({
       return (
         <label className="block">
           {label}
-          <input className="input mt-1" value={value ?? ''} onChange={(e) => onChange(e.target.value)} required={field.required} />
+          <input
+            className="input mt-1"
+            placeholder={field.placeholder}
+            pattern={field.pattern || undefined}
+            value={value ?? ''}
+            onChange={(e) => onChange(e.target.value)}
+            required={field.required}
+          />
         </label>
       );
   }

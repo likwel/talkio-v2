@@ -9,6 +9,7 @@ export interface Workspace {
   id: string;
   name: string;
   slug: string;
+  color?: string | null;
   _count?: { members: number; channels: number; boards: number };
 }
 
@@ -17,6 +18,7 @@ export interface Channel {
   workspaceId: string;
   name: string | null;
   topic: string | null;
+  color?: string | null;
   type: 'PUBLIC' | 'PRIVATE' | 'DIRECT';
   _count?: { messages: number; members: number };
   members?: { userId: string; user: Pick<User, 'id' | 'fullName' | 'avatarUrl'> }[];
@@ -25,6 +27,29 @@ export interface Channel {
 export interface WorkspaceDetail extends Workspace {
   members: { role: string; user: User }[];
   channels: Channel[];
+}
+
+export interface UserProfile extends User {
+  createdAt: string;
+  friendState: 'none' | 'friends' | 'incoming' | 'outgoing' | 'self';
+  friendshipId: string | null;
+  sharedWorkspaces: { id: string; name: string; color?: string | null }[];
+}
+
+export type BoardStatus = 'ACTIVE' | 'ON_HOLD' | 'COMPLETED' | 'ARCHIVED';
+
+export interface Automation {
+  id: string;
+  workspaceId: string;
+  name: string;
+  enabled: boolean;
+  triggerType: 'form.response.created' | 'card.moved.done' | 'meal.measurement.created' | 'message.keyword';
+  triggerConfig: Record<string, string>;
+  actionType: 'message.post' | 'card.create';
+  actionConfig: Record<string, string>;
+  lastRunAt?: string | null;
+  runCount: number;
+  createdAt: string;
 }
 
 export interface Message {
@@ -61,10 +86,19 @@ export interface Column {
 
 export interface Board {
   id: string;
+  workspaceId?: string;
   name: string;
   description?: string | null;
+  status: BoardStatus;
+  color?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+  leadId?: string | null;
+  lead?: Pick<User, 'id' | 'fullName' | 'avatarUrl'> | null;
+  members?: { user: Pick<User, 'id' | 'fullName' | 'avatarUrl'> }[];
   columns?: Column[];
-  _count?: { columns: number };
+  progress?: { total: number; done: number; pct: number };
+  _count?: { columns: number; members: number };
 }
 
 export interface Indicator {
@@ -121,6 +155,11 @@ export interface FormField {
   position: number;
   options: string[];
   helpText?: string;
+  placeholder?: string;
+  defaultValue?: string;
+  minValue?: number | null;
+  maxValue?: number | null;
+  pattern?: string;
 }
 
 export interface FormDef {
@@ -130,6 +169,15 @@ export interface FormDef {
   status: 'DRAFT' | 'PUBLISHED' | 'CLOSED';
   fields: FormField[];
   _count?: { responses: number; fields: number };
+}
+
+export interface FormResponse {
+  id: string;
+  submittedAt: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  submittedBy?: { id: string; fullName: string } | null;
+  answers: { fieldId: string; value: unknown }[];
 }
 
 export interface Calendar {

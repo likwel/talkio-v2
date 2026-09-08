@@ -13,6 +13,7 @@ import ProjectDetail from '@/pages/ProjectDetail';
 import Forms from '@/pages/Forms';
 import FormBuilder from '@/pages/FormBuilder';
 import FormFill from '@/pages/FormFill';
+import FormResponses from '@/pages/FormResponses';
 
 function Protected({ children }: { children: JSX.Element }) {
   const { user, loading } = useAuth();
@@ -39,14 +40,16 @@ export default function App() {
         <Route path="chat" element={<Navigate to="/" replace />} />
         <Route path="chat/:channelId" element={<Chat />} />
         <Route path="calendar" element={<CalendarPage />} />
-        <Route path="boards" element={<Boards />} />
-        <Route path="boards/:boardId" element={<BoardDetail />} />
+        <Route path="projects" element={<Boards />} />
+        <Route path="projects/:boardId" element={<BoardDetail />} />
+        <Route path="boards" element={<Navigate to="/projects" replace />} />
         <Route path="meal" element={<Meal />} />
         <Route path="meal/projects/:projectId" element={<ProjectDetail />} />
         <Route path="forms" element={<Forms />} />
         <Route path="forms/new" element={<FormBuilder />} />
         <Route path="forms/:formId/edit" element={<FormBuilder />} />
         <Route path="forms/:formId/fill" element={<FormFill />} />
+        <Route path="forms/:formId/responses" element={<FormResponses />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

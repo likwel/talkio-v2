@@ -25,8 +25,8 @@ type IconType = ComponentType<{ className?: string }>;
 
 const nav: { to: string; label: string; end?: boolean; Icon: IconType }[] = [
   { to: '/', label: 'Messagerie', end: true, Icon: IconChat },
+  { to: '/projects', label: 'Projet', Icon: IconKanban },
   { to: '/calendar', label: 'Agenda', Icon: IconCalendar },
-  { to: '/boards', label: 'Kanban', Icon: IconKanban },
   { to: '/meal', label: 'MEAL', Icon: IconAnalytics },
   { to: '/forms', label: 'Collecte', Icon: IconForms },
 ];
@@ -235,7 +235,7 @@ export default function Layout() {
                   'relative flex h-10 items-center gap-3 rounded-lg text-sm font-medium transition',
                   showLabels ? 'px-3' : 'justify-center',
                   isActive
-                    ? 'bg-brand-500/12 text-brand-700 dark:text-brand-300'
+                    ? 'accent-active'
                     : 'text-[var(--text-dim)] hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/5',
                 )
               }

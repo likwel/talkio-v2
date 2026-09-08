@@ -5,6 +5,7 @@ import { validate } from '../../middleware/validate';
 import { prisma } from '../../lib/prisma';
 import { requireWorkspaceMember } from '../../lib/access';
 import { notFound } from '../../lib/http';
+import { runAutomations } from '../automations/dispatch';
 
 const router = Router();
 
@@ -153,6 +154,13 @@ router.post(
         dimensions: req.body.dimensions,
         recordedById: req.user!.id,
       },
+    });
+    runAutomations(indicator.project.workspaceId, 'meal.measurement.created', {
+      indicator: { name: indicator.name, code: indicator.code },
+      measurement: { value: measurement.value, location: measurement.location ?? '' },
+      summary: `Mesure MEAL : ${indicator.name} = ${measurement.value}${
+        measurement.location ? ` (${measurement.location})` : ''
+      }`,
     });
     res.status(201).json(measurement);
   }),

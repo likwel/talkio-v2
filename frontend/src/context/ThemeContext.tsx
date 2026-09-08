@@ -3,23 +3,55 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 export type ThemePref = 'light' | 'dark' | 'system';
 type Resolved = 'light' | 'dark';
 
+export const DEFAULT_ACCENT = '#0cae36';
+export const ACCENT_PRESETS = [
+  '#0cae36', // vert Talkio
+  '#2563eb', // bleu
+  '#7c3aed', // violet
+  '#db2777', // rose
+  '#ea580c', // orange
+  '#0891b2', // cyan
+  '#4f46e5', // indigo
+  '#059669', // emeraude
+  '#65a30d', // olive
+  '#e11d48', // rouge
+];
+
 interface ThemeState {
-  /** Choix de l'utilisateur. */
   pref: ThemePref;
-  /** Theme reellement applique. */
   theme: Resolved;
   setPref: (t: ThemePref) => void;
   toggle: () => void;
+  /** Couleur d'accent choisie par l'utilisateur. */
+  accent: string;
+  setAccent: (hex: string) => void;
+  /** Surcharge transitoire (ex : couleur de l'espace actif). null pour retirer. */
+  setAccentOverride: (hex: string | null) => void;
 }
 
 const ThemeContext = createContext<ThemeState | undefined>(undefined);
-
 const systemDark = () => window.matchMedia('(prefers-color-scheme: dark)').matches;
 
 function initialPref(): ThemePref {
-  const saved = localStorage.getItem('talkio.theme');
-  if (saved === 'light' || saved === 'dark' || saved === 'system') return saved;
-  return 'system';
+  const s = localStorage.getItem('talkio.theme');
+  return s === 'light' || s === 'dark' || s === 'system' ? s : 'system';
+}
+
+function hexToRgb(hex: string): [number, number, number] {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return [12, 174, 54];
+  const n = parseInt(m[1], 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function applyAccent(hex: string) {
+  const [r, g, b] = hexToRgb(hex);
+  const root = document.documentElement.style;
+  root.setProperty('--accent', `rgb(${r} ${g} ${b})`);
+  root.setProperty('--accent-soft', `rgba(${r}, ${g}, ${b}, 0.13)`);
+  root.setProperty('--accent-softer', `rgba(${r}, ${g}, ${b}, 0.08)`);
+  root.setProperty('--accent-strong', `rgb(${Math.round(r * 0.8)} ${Math.round(g * 0.8)} ${Math.round(b * 0.8)})`);
+  root.setProperty('--accent-ring', `rgba(${r}, ${g}, ${b}, 0.22)`);
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
@@ -27,6 +59,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [resolved, setResolved] = useState<Resolved>(() =>
     initialPref() === 'system' ? (systemDark() ? 'dark' : 'light') : (initialPref() as Resolved),
   );
+  const [accent, setAccentState] = useState<string>(() => localStorage.getItem('talkio.accent') || DEFAULT_ACCENT);
+  const [override, setOverride] = useState<string | null>(null);
 
   useEffect(() => {
     const apply = () => {
@@ -38,18 +72,27 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     };
     apply();
     localStorage.setItem('talkio.theme', pref);
-
     if (pref !== 'system') return;
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
     mq.addEventListener('change', apply);
     return () => mq.removeEventListener('change', apply);
   }, [pref]);
 
+  useEffect(() => {
+    applyAccent(override || accent || DEFAULT_ACCENT);
+  }, [accent, override]);
+
   const value: ThemeState = {
     pref,
     theme: resolved,
     setPref: setPrefState,
     toggle: () => setPrefState(resolved === 'dark' ? 'light' : 'dark'),
+    accent,
+    setAccent: (hex) => {
+      setAccentState(hex);
+      localStorage.setItem('talkio.accent', hex);
+    },
+    setAccentOverride: setOverride,
   };
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

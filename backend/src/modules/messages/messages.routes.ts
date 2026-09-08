@@ -6,6 +6,7 @@ import { prisma } from '../../lib/prisma';
 import { requireChannelAccess } from '../channels/channels.routes';
 import { getIO } from '../../realtime/socket';
 import { forbidden, notFound } from '../../lib/http';
+import { runAutomations } from '../automations/dispatch';
 
 const router = Router();
 
@@ -56,7 +57,7 @@ router.post(
     }),
   ),
   asyncHandler(async (req, res) => {
-    await requireChannelAccess(req.user!.id, req.body.channelId);
+    const channel = await requireChannelAccess(req.user!.id, req.body.channelId);
 
     const message = await prisma.message.create({
       data: {
@@ -69,6 +70,13 @@ router.post(
     });
 
     getIO()?.to(`channel:${req.body.channelId}`).emit('message:new', message);
+    if (!message.parentId) {
+      runAutomations(channel.workspaceId, 'message.keyword', {
+        message: { body: message.body, id: message.id },
+        author: message.author.fullName,
+        summary: `Message de ${message.author.fullName} : ${message.body}`,
+      });
+    }
     res.status(201).json(message);
   }),
 );

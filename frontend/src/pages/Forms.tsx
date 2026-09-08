@@ -35,9 +35,12 @@ export default function Forms() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-2 text-lg font-normal sm:text-[22px] text-slate-800 dark:text-slate-100">
-            <IconForms className="h-6 w-6 text-brand-600" /> Collecte de donnees
+            <IconForms className="h-6 w-6 text-[var(--accent)]" /> Collecte de donnees
           </h1>
-          <p className="text-slate-500">Formulaires dynamiques, saisie terrain et export CSV</p>
+          <p className="text-slate-500">
+            Formulaires d'enquete personnalisables : validation, valeurs par defaut, saisie terrain, tableau de reponses
+            et export CSV
+          </p>
         </div>
         <Link to="/forms/new" className="btn-primary">
           <IconAdd className="h-5 w-5" /> Nouveau formulaire
@@ -60,11 +63,14 @@ export default function Forms() {
               <Link to={`/forms/${f.id}/fill`} className="btn-text h-8">
                 Saisir
               </Link>
+              <Link to={`/forms/${f.id}/responses`} className="btn-text h-8">
+                Reponses ({f._count?.responses ?? 0})
+              </Link>
               <Link to={`/forms/${f.id}/edit`} className="btn-text h-8">
                 Editer
               </Link>
               <button onClick={() => downloadCsv(f.id, f.title)} className="btn-text h-8">
-                <IconDownload className="h-4 w-4" /> Export CSV
+                <IconDownload className="h-4 w-4" /> CSV
               </button>
             </div>
           </div>

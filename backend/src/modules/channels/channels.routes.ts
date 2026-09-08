@@ -129,8 +129,67 @@ router.post(
 router.get(
   '/:id',
   asyncHandler(async (req, res) => {
-    const channel = await requireChannelAccess(req.user!.id, req.params.id);
+    await requireChannelAccess(req.user!.id, req.params.id);
+    const channel = await prisma.channel.findUnique({
+      where: { id: req.params.id },
+      include: memberInclude,
+    });
     res.json(channel);
+  }),
+);
+
+router.patch(
+  '/:id',
+  validate(
+    z.object({
+      name: z.string().min(1).max(80).nullable().optional(),
+      topic: z.string().max(280).nullable().optional(),
+      color: z
+        .string()
+        .regex(/^#[0-9a-f]{6}$/i)
+        .nullable()
+        .optional(),
+    }),
+  ),
+  asyncHandler(async (req, res) => {
+    const channel = await requireChannelAccess(req.user!.id, req.params.id);
+    const updated = await prisma.channel.update({
+      where: { id: channel.id },
+      data: {
+        ...(req.body.name !== undefined ? { name: req.body.name } : {}),
+        ...(req.body.topic !== undefined ? { topic: req.body.topic } : {}),
+        ...(req.body.color !== undefined ? { color: req.body.color } : {}),
+      },
+      include: memberInclude,
+    });
+    res.json(updated);
+  }),
+);
+
+router.post(
+  '/:id/members',
+  validate(z.object({ userIds: z.array(z.string()).min(1).max(50) })),
+  asyncHandler(async (req, res) => {
+    const channel = await requireChannelAccess(req.user!.id, req.params.id);
+    await Promise.all(req.body.userIds.map((uid: string) => requireWorkspaceMember(uid, channel.workspaceId)));
+    await prisma.channelMember.createMany({
+      data: req.body.userIds.map((userId: string) => ({ channelId: channel.id, userId })),
+      skipDuplicates: true,
+    });
+    const full = await prisma.channel.findUnique({ where: { id: channel.id }, include: memberInclude });
+    res.status(201).json(full);
+  }),
+);
+
+router.delete(
+  '/:id/members/:userId',
+  asyncHandler(async (req, res) => {
+    const channel = await requireChannelAccess(req.user!.id, req.params.id);
+    if (channel.type === 'DIRECT') throw badRequest('Impossible de retirer un membre d\'une conversation directe');
+    await prisma.channelMember.deleteMany({
+      where: { channelId: channel.id, userId: req.params.userId },
+    });
+    res.status(204).end();
   }),
 );
 

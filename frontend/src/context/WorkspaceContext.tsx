@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState, ReactNode } fr
 import { api } from '@/lib/api';
 import type { Workspace } from '@/lib/types';
 import { useAuth } from './AuthContext';
+import { useTheme } from './ThemeContext';
 
 interface WorkspaceState {
   workspaces: Workspace[];
@@ -30,9 +31,15 @@ function pushRecent(id: string) {
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
+  const { setAccentOverride } = useTheme();
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [current, setCurrentState] = useState<Workspace | null>(null);
   const [recentTick, setRecentTick] = useState(0);
+
+  // La couleur de l'espace actif devient l'accent global de l'app.
+  useEffect(() => {
+    setAccentOverride(current?.color ?? null);
+  }, [current?.id, current?.color, setAccentOverride]);
 
   async function reload() {
     const r = await api.get<Workspace[]>('/workspaces');

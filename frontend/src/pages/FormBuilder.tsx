@@ -64,7 +64,12 @@ export default function FormBuilder() {
           required: f.required,
           position: i,
           options: f.options,
-          helpText: f.helpText,
+          helpText: f.helpText || undefined,
+          placeholder: f.placeholder || undefined,
+          defaultValue: f.defaultValue || undefined,
+          minValue: f.minValue ?? undefined,
+          maxValue: f.maxValue ?? undefined,
+          pattern: f.pattern || undefined,
         })),
       };
       if (editing) {
@@ -156,6 +161,53 @@ export default function FormBuilder() {
                 onChange={(e) => update(i, { options: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })}
               />
             )}
+
+            <div className="grid gap-2 border-t border-[var(--outline)] pt-2 text-sm sm:grid-cols-2">
+              <input
+                className="input"
+                placeholder="Texte d'aide (sous le champ)"
+                value={field.helpText ?? ''}
+                onChange={(e) => update(i, { helpText: e.target.value })}
+              />
+              <input
+                className="input"
+                placeholder="Placeholder"
+                value={field.placeholder ?? ''}
+                onChange={(e) => update(i, { placeholder: e.target.value })}
+              />
+              <input
+                className="input"
+                placeholder="Valeur par defaut"
+                value={field.defaultValue ?? ''}
+                onChange={(e) => update(i, { defaultValue: e.target.value })}
+              />
+              {field.type === 'NUMBER' && (
+                <div className="flex gap-2">
+                  <input
+                    className="input"
+                    type="number"
+                    placeholder="Min"
+                    value={field.minValue ?? ''}
+                    onChange={(e) => update(i, { minValue: e.target.value === '' ? null : Number(e.target.value) })}
+                  />
+                  <input
+                    className="input"
+                    type="number"
+                    placeholder="Max"
+                    value={field.maxValue ?? ''}
+                    onChange={(e) => update(i, { maxValue: e.target.value === '' ? null : Number(e.target.value) })}
+                  />
+                </div>
+              )}
+              {(field.type === 'TEXT' || field.type === 'TEXTAREA') && (
+                <input
+                  className="input"
+                  placeholder="Motif regex (validation)"
+                  value={field.pattern ?? ''}
+                  onChange={(e) => update(i, { pattern: e.target.value })}
+                />
+              )}
+            </div>
           </div>
         ))}
 

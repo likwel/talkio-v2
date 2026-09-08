@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import { getSocket } from '@/lib/socket';
 import { useWorkspace } from '@/context/WorkspaceContext';
 import { useAuth } from '@/context/AuthContext';
+import { useProfile } from '@/context/ProfileContext';
 import type { ActiveCall, Channel, Message } from '@/lib/types';
 import {
   IconAdd,
@@ -20,9 +21,12 @@ import {
   IconVideoFill,
   IconFriends,
   IconBack,
+  IconSettings,
 } from '@/lib/icons';
 import NewConversationModal from '@/components/NewConversationModal';
 import FriendsModal from '@/components/FriendsModal';
+import ChannelSettingsModal from '@/components/ChannelSettingsModal';
+import WorkspaceSettingsModal from '@/components/WorkspaceSettingsModal';
 
 function initials(name?: string | null) {
   if (!name) return '?';
@@ -59,7 +63,10 @@ export default function Chat() {
   const [addingSalon, setAddingSalon] = useState(false);
   const [dmModalOpen, setDmModalOpen] = useState(false);
   const [friendsOpen, setFriendsOpen] = useState(false);
+  const [chanSettingsOpen, setChanSettingsOpen] = useState(false);
+  const [wsSettingsOpen, setWsSettingsOpen] = useState(false);
   const [newChannel, setNewChannel] = useState('');
+  const { openProfile } = useProfile();
   // Mobile : on affiche soit la liste, soit la conversation
   const [mobileView, setMobileView] = useState<'list' | 'thread'>(channelId ? 'thread' : 'list');
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -231,6 +238,9 @@ export default function Chat() {
             <button className="icon-btn-sm" title="Amis" onClick={() => setFriendsOpen(true)}>
               <IconFriends className="h-[18px] w-[18px]" />
             </button>
+            <button className="icon-btn-sm" title="Parametres de l'espace" onClick={() => setWsSettingsOpen(true)}>
+              <IconSettings className="h-[18px] w-[18px]" />
+            </button>
           </div>
           <div className="relative">
             <IconSearch className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-dim)]" />
@@ -262,7 +272,13 @@ export default function Chat() {
                 key={c.id}
                 active={c.id === activeId}
                 onClick={() => navigate(`/chat/${c.id}`)}
-                icon={<IconHash className="h-4 w-4 opacity-70" />}
+                icon={
+                  c.color ? (
+                    <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: c.color }} />
+                  ) : (
+                    <IconHash className="h-4 w-4 opacity-70" />
+                  )
+                }
                 label={c.name ?? 'salon'}
                 call={callByChannel.get(c.id)}
               />
@@ -307,6 +323,13 @@ export default function Chat() {
         onCreated={onConversationCreated}
       />
       <FriendsModal open={friendsOpen} onClose={() => setFriendsOpen(false)} onMessage={startDmWith} />
+      <ChannelSettingsModal
+        channel={activeChannel}
+        open={chanSettingsOpen}
+        onClose={() => setChanSettingsOpen(false)}
+        onChanged={() => channels.refetch()}
+      />
+      <WorkspaceSettingsModal open={wsSettingsOpen} onClose={() => setWsSettingsOpen(false)} />
 
       {/* ---------- Chat ---------- */}
       <div
@@ -326,7 +349,9 @@ export default function Chat() {
           >
             <IconBack className="h-5 w-5" />
           </button>
-          {activeChannel?.type !== 'DIRECT' ? (
+          {activeChannel?.color ? (
+            <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: activeChannel.color }} />
+          ) : activeChannel?.type !== 'DIRECT' ? (
             <IconHash className="h-5 w-5 shrink-0 text-[var(--text-dim)]" />
           ) : isGroup(activeChannel) ? (
             <IconGroups className="h-5 w-5 shrink-0 text-[var(--text-dim)]" />
@@ -349,7 +374,7 @@ export default function Chat() {
             <button className="icon-btn" title="Visio" onClick={() => startCall('VIDEO')}>
               <IconVideo className="h-5 w-5" />
             </button>
-            <button className="hidden icon-btn sm:grid" title="Membres">
+            <button className="icon-btn" title="Membres et parametres" onClick={() => setChanSettingsOpen(true)}>
               <IconGroups className="h-5 w-5" />
             </button>
           </div>
@@ -384,10 +409,17 @@ export default function Chat() {
           <div className="space-y-4">
             {groups.map((g, gi) => (
               <div key={gi} className="flex gap-3">
-                <Avatar id={g.author.id} name={g.author.fullName} />
+                <button onClick={() => openProfile(g.author.id)} className="shrink-0" title="Voir le profil">
+                  <Avatar id={g.author.id} name={g.author.fullName} />
+                </button>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline gap-2">
-                    <span className="text-[13px] font-semibold">{g.author.fullName}</span>
+                    <button
+                      onClick={() => openProfile(g.author.id)}
+                      className="text-[13px] font-semibold hover:underline"
+                    >
+                      {g.author.fullName}
+                    </button>
                     <span className="text-[11px] text-[var(--text-dim)]">
                       {new Date(g.items[0].createdAt).toLocaleString('fr-FR', {
                         hour: '2-digit',
@@ -467,7 +499,7 @@ function ConvItem({
         className={clsx(
           'flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] transition',
           active
-            ? 'bg-brand-500/12 font-semibold text-brand-700 dark:text-brand-300'
+            ? 'accent-active font-semibold'
             : 'text-[var(--text-dim)] hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/5',
         )}
       >

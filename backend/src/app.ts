@@ -16,6 +16,8 @@ import formRoutes from './modules/forms/forms.routes';
 import callRoutes from './modules/calls/calls.routes';
 import calendarRoutes from './modules/calendar/calendar.routes';
 import friendRoutes from './modules/friends/friends.routes';
+import userRoutes from './modules/users/users.routes';
+import automationRoutes from './modules/automations/automations.routes';
 
 export function createApp() {
   const app = express();
@@ -37,6 +39,8 @@ export function createApp() {
   app.use('/api/calls', authenticate, callRoutes);
   app.use('/api/calendar', authenticate, calendarRoutes);
   app.use('/api/friends', authenticate, friendRoutes);
+  app.use('/api/users', authenticate, userRoutes);
+  app.use('/api/automations', authenticate, automationRoutes);
 
   app.use(notFoundHandler);
   app.use(errorHandler);
