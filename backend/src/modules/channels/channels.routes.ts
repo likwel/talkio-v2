@@ -25,22 +25,61 @@ router.get(
   '/',
   validate(z.object({ workspaceId: z.string() }), 'query'),
   asyncHandler(async (req, res) => {
+    const me = req.user!.id;
     const workspaceId = String(req.query.workspaceId);
-    await requireWorkspaceMember(req.user!.id, workspaceId);
+    await requireWorkspaceMember(me, workspaceId);
     const channels = await prisma.channel.findMany({
       where: {
         workspaceId,
-        OR: [{ type: 'PUBLIC' }, { members: { some: { userId: req.user!.id } } }],
+        OR: [{ type: 'PUBLIC' }, { members: { some: { userId: me } } }],
       },
       include: {
         _count: { select: { messages: true, members: true } },
         members: {
-          select: { userId: true, user: { select: { id: true, fullName: true, avatarUrl: true } } },
+          select: { userId: true, user: { select: { id: true, fullName: true, avatarUrl: true, presenceStatus: true } } },
         },
       },
       orderBy: { createdAt: 'asc' },
     });
-    res.json(channels);
+
+    // Nombre de messages non lus par salon (base sur ChannelMember.lastReadAt).
+    const myMemberships = await prisma.channelMember.findMany({
+      where: { userId: me, channelId: { in: channels.map((c) => c.id) } },
+      select: { channelId: true, lastReadAt: true },
+    });
+    const lastReadByChannel = new Map(myMemberships.map((m) => [m.channelId, m.lastReadAt]));
+    const unreadEntries = await Promise.all(
+      channels.map(async (c) => {
+        if (!lastReadByChannel.has(c.id)) return [c.id, 0] as const;
+        const lastReadAt = lastReadByChannel.get(c.id) ?? undefined;
+        const count = await prisma.message.count({
+          where: {
+            channelId: c.id,
+            parentId: null,
+            authorId: { not: me },
+            ...(lastReadAt ? { createdAt: { gt: lastReadAt } } : {}),
+          },
+        });
+        return [c.id, count] as const;
+      }),
+    );
+    const unreadByChannel = new Map(unreadEntries);
+
+    res.json(channels.map((c) => ({ ...c, unreadCount: unreadByChannel.get(c.id) ?? 0 })));
+  }),
+);
+
+// Marque le salon comme lu (met a jour ChannelMember.lastReadAt).
+router.post(
+  '/:id/read',
+  asyncHandler(async (req, res) => {
+    const channel = await requireChannelAccess(req.user!.id, req.params.id);
+    await prisma.channelMember.upsert({
+      where: { channelId_userId: { channelId: channel.id, userId: req.user!.id } },
+      update: { lastReadAt: new Date() },
+      create: { channelId: channel.id, userId: req.user!.id, lastReadAt: new Date() },
+    });
+    res.status(204).end();
   }),
 );
 
@@ -70,7 +109,7 @@ router.post(
 );
 
 const memberInclude = {
-  members: { select: { userId: true, user: { select: { id: true, fullName: true, avatarUrl: true } } } },
+  members: { select: { userId: true, user: { select: { id: true, fullName: true, avatarUrl: true, presenceStatus: true } } } },
 } as const;
 
 /** Cree (ou retrouve) une conversation directe 1:1 ou de groupe. */

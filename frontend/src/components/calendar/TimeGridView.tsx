@@ -78,11 +78,11 @@ export default function TimeGridView({ days, events, onSelectEvent, onCreateAt }
         <div className="w-14 shrink-0" />
         {days.map((d) => (
           <div key={d.toISOString()} className="flex-1 py-2 text-center">
-            <div className="text-[11px] uppercase tracking-wide text-slate-500">{fmtDayShort(d)}</div>
+            <div className="text-2xs uppercase tracking-wide text-[var(--text-dim)]">{fmtDayShort(d)}</div>
             <div
               className={[
                 'mx-auto mt-1 grid h-9 w-9 place-items-center rounded-full text-xl',
-                isToday(d) ? 'bg-brand-600 font-medium text-white' : 'font-normal text-slate-700 dark:text-slate-200',
+                isToday(d) ? 'bg-[var(--accent)] font-medium text-white' : 'font-normal text-[var(--text)]',
               ].join(' ')}
             >
               {d.getDate()}
@@ -94,7 +94,7 @@ export default function TimeGridView({ days, events, onSelectEvent, onCreateAt }
       {/* Bandeau "journee entiere" */}
       {allDay.length > 0 && (
         <div className="flex border-b border-[var(--outline)] pr-4">
-          <div className="flex w-14 shrink-0 items-center justify-end pr-2 text-[10px] text-slate-400">jour</div>
+          <div className="flex w-14 shrink-0 items-center justify-end pr-2 text-2xs text-[var(--text-dim)]">jour</div>
           {days.map((d) => (
             <div key={d.toISOString()} className="flex-1 space-y-0.5 p-1">
               {allDay
@@ -125,7 +125,7 @@ export default function TimeGridView({ days, events, onSelectEvent, onCreateAt }
         <div className="relative w-14 shrink-0">
           {HOURS.map((h) => (
             <div key={h} className="relative" style={{ height: HOUR_PX }}>
-              <span className="absolute -top-1.5 right-2 text-[10px] text-slate-400">
+              <span className="absolute -top-1.5 right-2 text-2xs text-[var(--text-dim)]">
                 {h === 0 ? '' : `${h}:00`}
               </span>
             </div>
@@ -164,7 +164,7 @@ export default function TimeGridView({ days, events, onSelectEvent, onCreateAt }
                       width: `calc(${width}% - 4px)`,
                       backgroundColor: event.color ?? event.calendar.color,
                     }}
-                    className="absolute overflow-hidden rounded-lg px-2 py-1 text-left text-[11px] leading-tight text-white shadow-elevation-1 ring-1 ring-black/5 transition hover:shadow-elevation-2"
+                    className="absolute overflow-hidden rounded-lg px-2 py-1 text-left text-2xs leading-tight text-white shadow-elevation-1 ring-1 ring-black/5 transition hover:shadow-elevation-2"
                   >
                     <div className="font-semibold">{event.title}</div>
                     {height > 28 && (

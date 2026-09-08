@@ -4,8 +4,23 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import type { Indicator, Project } from '@/lib/types';
 import { IconBack } from '@/lib/icons';
+import Select from '@/components/Select';
 
 const LEVELS: Indicator['level'][] = ['IMPACT', 'OUTCOME', 'OUTPUT', 'ACTIVITY'];
+
+/** Libelles en langage clair (le sigle technique reste entre parentheses). */
+const LEVEL_LABEL: Record<Indicator['level'], string> = {
+  IMPACT: 'Impact — changement durable vise (Impact)',
+  OUTCOME: 'Resultat — effet a moyen terme (Outcome)',
+  OUTPUT: 'Produit — livrable direct de l’action (Output)',
+  ACTIVITY: 'Activite — action menee sur le terrain (Activity)',
+};
+const LEVEL_SHORT: Record<Indicator['level'], string> = {
+  IMPACT: 'Impact',
+  OUTCOME: 'Resultat',
+  OUTPUT: 'Produit',
+  ACTIVITY: 'Activite',
+};
 
 export default function ProjectDetail() {
   const { projectId } = useParams();
@@ -42,24 +57,24 @@ export default function ProjectDetail() {
     project.refetch();
   }
 
-  if (project.isLoading) return <div className="p-6 text-slate-400">Chargement…</div>;
+  if (project.isLoading) return <div className="p-6 text-[var(--text-dim)]">Chargement…</div>;
   if (!project.data) return <div className="p-6">Projet introuvable</div>;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 p-4 sm:p-6">
+    <div className="page max-w-8xl space-y-6">
       <div className="flex items-center gap-2">
         <Link to="/meal" className="icon-btn" aria-label="Retour a MEAL">
           <IconBack className="h-5 w-5" />
         </Link>
-        <h1 className="text-lg font-normal sm:text-[22px] text-slate-800 dark:text-slate-100">{project.data.name}</h1>
+        <h1 className="page-title truncate">{project.data.name}</h1>
       </div>
-      <p className="text-slate-500">
+      <p className="text-[var(--text-dim)]">
         {project.data.code} {project.data.donor && `· Bailleur: ${project.data.donor}`}
       </p>
 
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">Cadre logique & indicateurs</h2>
-        <button className="btn-ghost" onClick={() => setShowInd((v) => !v)}>
+        <button className="btn-outlined" onClick={() => setShowInd((v) => !v)}>
           + Indicateur
         </button>
       </div>
@@ -74,11 +89,13 @@ export default function ProjectDetail() {
             onChange={(e) => setInd({ ...ind, name: e.target.value })}
             required
           />
-          <select className="input" value={ind.level} onChange={(e) => setInd({ ...ind, level: e.target.value })}>
-            {LEVELS.map((l) => (
-              <option key={l}>{l}</option>
-            ))}
-          </select>
+          <Select
+            className="sm:col-span-3"
+            aria-label="Niveau de l'indicateur"
+            value={ind.level}
+            onChange={(level) => setInd({ ...ind, level })}
+            options={LEVELS.map((l) => ({ value: l, label: LEVEL_LABEL[l] }))}
+          />
           <input className="input" placeholder="Unite" value={ind.unit} onChange={(e) => setInd({ ...ind, unit: e.target.value })} />
           <input
             className="input"
@@ -97,7 +114,9 @@ export default function ProjectDetail() {
           if (!items.length) return null;
           return (
             <div key={level}>
-              <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">{level}</h3>
+              <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-[var(--text-dim)]">
+                {LEVEL_SHORT[level]}
+              </h3>
               <div className="space-y-3">
                 {items.map((i) => (
                   <IndicatorRow key={i.id} indicator={i} onMeasure={addMeasurement} />
@@ -106,7 +125,7 @@ export default function ProjectDetail() {
             </div>
           );
         })}
-        {project.data.indicators?.length === 0 && <p className="text-slate-400">Aucun indicateur defini.</p>}
+        {project.data.indicators?.length === 0 && <p className="text-[var(--text-dim)]">Aucun indicateur defini.</p>}
       </div>
     </div>
   );
@@ -129,21 +148,21 @@ function IndicatorRow({
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="text-sm font-semibold">
-            <span className="text-slate-400">{indicator.code}</span> — {indicator.name}
+            <span className="text-[var(--text-dim)]">{indicator.code}</span> — {indicator.name}
           </div>
-          <div className="text-xs text-slate-500">
+          <div className="text-xs text-[var(--text-dim)]">
             Realise: {indicator.achieved ?? 0}
             {indicator.target != null && ` / ${indicator.target}`} {indicator.unit}
           </div>
         </div>
-        <button className="btn-text h-8 text-xs" onClick={() => setOpen((v) => !v)}>
+        <button className="btn-text btn-sm" onClick={() => setOpen((v) => !v)}>
           + Mesure
         </button>
       </div>
 
       {indicator.target != null && (
-        <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
-          <div className="h-full rounded-full bg-brand-500" style={{ width: `${pct}%` }} />
+        <div className="mt-2 h-2 overflow-hidden rounded-full bg-[var(--surface-2)]">
+          <div className="h-full rounded-full bg-[var(--accent)]" style={{ width: `${pct}%` }} />
         </div>
       )}
 
@@ -172,11 +191,11 @@ function IndicatorRow({
       )}
 
       {!!indicator.measurements?.length && (
-        <ul className="mt-3 space-y-1 text-xs text-slate-500">
+        <ul className="mt-3 space-y-1 text-xs text-[var(--text-dim)]">
           {indicator.measurements.map((ms) => (
             <li key={ms.id}>
               {new Date(ms.periodStart).toLocaleDateString()} → {new Date(ms.periodEnd).toLocaleDateString()} :{' '}
-              <span className="font-medium text-slate-700">{ms.value}</span>
+              <span className="font-medium text-[var(--text)]">{ms.value}</span>
               {ms.location && ` · ${ms.location}`}
             </li>
           ))}

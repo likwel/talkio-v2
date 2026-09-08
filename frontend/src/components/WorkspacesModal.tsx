@@ -74,7 +74,7 @@ export default function WorkspacesModal({ open, onClose }: { open: boolean; onCl
               }}
               className={clsx(
                 'flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition hover:bg-black/5 dark:hover:bg-white/5',
-                w.id === current?.id && 'bg-brand-500/10',
+                w.id === current?.id && 'bg-[var(--accent-soft)]',
               )}
             >
               <span

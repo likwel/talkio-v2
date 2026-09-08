@@ -8,21 +8,39 @@ export default {
         sans: ['Inter', 'system-ui', '-apple-system', 'Segoe UI', 'sans-serif'],
         display: ['"Inter Tight"', 'Inter', 'system-ui', 'sans-serif'],
       },
+      // Echelle typographique unique (taille / interlignage). Sert de reference a
+      // tout le projet : plus de tailles arbitraires `text-[13px]` etc.
+      fontSize: {
+        '2xs': ['12px', '16px'], // micro-meta : heures, compteurs
+        xs: ['13px', '18px'], // meta secondaire, chips, labels
+        sm: ['14px', '20px'], // texte UI par defaut (boutons, listes, nav, inputs)
+        base: ['15px', '23px'], // corps de texte, messages
+        md: ['16px', '24px'], // item accentue, sous-titre
+        lg: ['18px', '26px'], // titres de modale / sous-sections
+        xl: ['22px', '30px'], // titre de page (mobile)
+        '2xl': ['26px', '34px'], // titre de page (desktop) / hero
+        '3xl': ['32px', '38px'],
+        '4xl': ['38px', '42px'],
+      },
       colors: {
-        // Palette Talkio : vert #0CAE36 (primaire) + menthe #63E6BE (accent)
+        // Palette Talkio : bleu Telegram #3390EC (primaire) + violet #8774E1 (accent secondaire)
         brand: {
-          50: '#e7fbef',
-          100: '#c3f5da',
-          200: '#8fecc3',
-          300: '#63e6be',
-          400: '#25cc76',
-          500: '#12b84a',
-          600: '#0cae36',
-          700: '#0a8c2c',
-          800: '#0c6d27',
-          900: '#0b4c21',
+          50: '#eaf3fd',
+          100: '#d1e6fb',
+          200: '#a7cef6',
+          300: '#6fb0f0',
+          400: '#3390ec',
+          500: '#2f86dc',
+          600: '#2b7cd4',
+          700: '#2265b0',
+          800: '#1d5390',
+          900: '#1a4676',
         },
-        mint: '#63e6be',
+        mint: '#8774e1',
+      },
+      maxWidth: {
+        '8xl': '90rem',
+        '9xl': '100rem',
       },
       borderRadius: {
         lg: '10px',

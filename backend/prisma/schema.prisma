@@ -15,14 +15,15 @@ datasource db {
 // ---------------------------------------------------------------------------
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  passwordHash String
-  fullName     String
-  avatarUrl    String?
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id             String         @id @default(cuid())
+  email          String         @unique
+  passwordHash   String
+  fullName       String
+  avatarUrl      String?
+  isActive       Boolean        @default(true)
+  presenceStatus PresenceStatus @default(ONLINE)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
 
   refreshTokens     RefreshToken[]
   memberships       WorkspaceMember[]
@@ -67,6 +68,12 @@ enum WorkspaceRole {
   ADMIN
   MEMBER
   GUEST
+}
+enum PresenceStatus {
+  ONLINE
+  AWAY
+  BUSY
+  INVISIBLE
 }
 
 model Workspace {
@@ -142,18 +149,29 @@ model ChannelMember {
   @@index([userId])
 }
 
+enum MessageKind {
+  TEXT
+  CALL
+}
+
 model Message {
-  id        String    @id @default(cuid())
+  id        String      @id @default(cuid())
   channelId String
-  channel   Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  channel   Channel     @relation(fields: [channelId], references: [id], onDelete: Cascade)
   authorId  String
-  author    User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  author    User        @relation(fields: [authorId], references: [id], onDelete: Cascade)
   body      String
+  kind      MessageKind @default(TEXT)
+  /// Appel associe pour les messages de type CALL (historique d'appel / visio).
+  callId    String?
+  call      Call?       @relation(fields: [callId], references: [id], onDelete: SetNull)
   parentId  String?
-  parent    Message?  @relation("MessageThread", fields: [parentId], references: [id], onDelete: Cascade)
-  replies   Message[] @relation("MessageThread")
+  parent    Message?    @relation("MessageThread", fields: [parentId], references: [id], onDelete: Cascade)
+  replies   Message[]   @relation("MessageThread")
+  /// Nom de l'auteur d'origine quand le message a ete transfere (repost).
+  forwardedFrom String?
   editedAt  DateTime?
-  createdAt DateTime  @default(now())
+  createdAt DateTime    @default(now())
 
   attachments Attachment[]
 
@@ -203,6 +221,7 @@ model Call {
   endedAt     DateTime?
 
   participants CallParticipant[]
+  messages     Message[]
 
   @@index([workspaceId])
 }

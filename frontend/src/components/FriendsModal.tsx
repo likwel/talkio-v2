@@ -102,7 +102,7 @@ export default function FriendsModal({
 
   return (
     <Modal open={open} onClose={onClose} title="Amis">
-      <div className="mb-3 flex gap-1 rounded-lg bg-[var(--surface-2)] p-1 text-[13px] font-semibold">
+      <div className="mb-3 flex gap-1 rounded-lg bg-[var(--surface-2)] p-1 text-sm font-semibold">
         {(
           [
             ['friends', `Amis (${friends.length})`],
@@ -130,7 +130,7 @@ export default function FriendsModal({
               className={clsx(
                 'rounded-lg px-3 py-2 text-sm',
                 msg.kind === 'ok'
-                  ? 'bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-200'
+                  ? 'bg-brand-50 text-brand-700 dark:bg-[var(--accent-soft)] dark:text-brand-200'
                   : 'bg-red-50 text-red-600 dark:bg-red-950/50 dark:text-red-300',
               )}
             >
@@ -157,11 +157,11 @@ export default function FriendsModal({
       {tab === 'requests' && (
         <div className="space-y-4">
           <div>
-            <div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-[var(--text-dim)]">Recues</div>
+            <div className="mb-1 text-2xs font-bold uppercase tracking-wide text-[var(--text-dim)]">Recues</div>
             <ul>
               {reqs.incoming.map((r) => (
                 <Row key={r.id} user={r.user}>
-                  <button className="icon-btn-sm text-brand-600" title="Accepter" onClick={() => accept(r.id)}>
+                  <button className="icon-btn-sm text-[var(--accent)]" title="Accepter" onClick={() => accept(r.id)}>
                     <IconTick className="h-5 w-5" />
                   </button>
                   <button className="icon-btn-sm text-red-500" title="Refuser" onClick={() => decline(r.id)}>
@@ -175,7 +175,7 @@ export default function FriendsModal({
             </ul>
           </div>
           <div>
-            <div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-[var(--text-dim)]">Envoyees</div>
+            <div className="mb-1 text-2xs font-bold uppercase tracking-wide text-[var(--text-dim)]">Envoyees</div>
             <ul>
               {reqs.outgoing.map((r) => (
                 <Row key={r.id} user={r.user}>
@@ -195,7 +195,7 @@ export default function FriendsModal({
           {friends.map((u) => (
             <Row key={u.id} user={u}>
               <button
-                className="btn-primary h-8 px-3 text-xs"
+                className="btn-primary btn-sm"
                 onClick={() => {
                   onMessage(u.id);
                   onClose();

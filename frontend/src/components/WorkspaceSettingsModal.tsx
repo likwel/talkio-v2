@@ -121,13 +121,13 @@ export default function WorkspaceSettingsModal({ open, onClose }: { open: boolea
               <li key={m.user.id} className="flex items-center gap-2 rounded-lg px-1.5 py-1 text-sm">
                 <button onClick={() => openProfile(m.user.id)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
                   <span
-                    className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-[10px] font-bold text-white"
+                    className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-2xs font-bold text-white"
                     style={{ background: tint(m.user.id) }}
                   >
                     {initials(m.user.fullName)}
                   </span>
                   <span className="min-w-0 truncate">{m.user.fullName}</span>
-                  <span className="chip shrink-0 text-[10px]">{m.role}</span>
+                  <span className="chip shrink-0 text-2xs">{m.role}</span>
                 </button>
                 {m.role !== 'OWNER' && (
                   <button

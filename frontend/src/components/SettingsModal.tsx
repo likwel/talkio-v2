@@ -1,12 +1,12 @@
-import { FormEvent, ReactNode, useState } from 'react';
+import { FormEvent, ReactNode, useEffect, useState } from 'react';
 import clsx from 'clsx';
 import Modal from '@/components/Modal';
 import ColorPicker from '@/components/ColorPicker';
-import AutomationsPanel from '@/components/AutomationsPanel';
 import { api } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme, type ThemePref } from '@/context/ThemeContext';
 import { useDialog } from '@/context/DialogContext';
+import StatusPicker from '@/components/StatusPicker';
 import {
   IconPerson,
   IconPalette,
@@ -16,21 +16,32 @@ import {
   IconLight,
   IconDark,
   IconToday,
-  IconSettings,
 } from '@/lib/icons';
 
-type Tab = 'profil' | 'apparence' | 'automatisation' | 'securite' | 'compte';
+export type SettingsTab = 'profil' | 'apparence' | 'securite' | 'compte';
+type Tab = SettingsTab;
 
 const TABS: { id: Tab; label: string; Icon: typeof IconPerson }[] = [
   { id: 'profil', label: 'Profil', Icon: IconPerson },
   { id: 'apparence', label: 'Apparence', Icon: IconPalette },
-  { id: 'automatisation', label: 'Automatisation', Icon: IconSettings },
   { id: 'securite', label: 'Securite', Icon: IconShield },
   { id: 'compte', label: 'Compte', Icon: IconLogout },
 ];
 
-export default function SettingsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [tab, setTab] = useState<Tab>('profil');
+export default function SettingsModal({
+  open,
+  onClose,
+  initialTab = 'profil',
+}: {
+  open: boolean;
+  onClose: () => void;
+  initialTab?: SettingsTab;
+}) {
+  const [tab, setTab] = useState<Tab>(initialTab);
+
+  useEffect(() => {
+    if (open) setTab(initialTab);
+  }, [open, initialTab]);
 
   return (
     <Modal open={open} onClose={onClose} size="lg" title="Parametres">
@@ -55,7 +66,6 @@ export default function SettingsModal({ open, onClose }: { open: boolean; onClos
         <div className="min-w-0 flex-1 border-t border-[var(--outline)] pt-4 sm:border-l sm:border-t-0 sm:pl-5 sm:pt-0">
           {tab === 'profil' && <ProfileTab />}
           {tab === 'apparence' && <AppearanceTab />}
-          {tab === 'automatisation' && <AutomationsPanel />}
           {tab === 'securite' && <SecurityTab />}
           {tab === 'compte' && <AccountTab onClose={onClose} />}
         </div>
@@ -79,7 +89,7 @@ function Notice({ kind, children }: { kind: 'ok' | 'err'; children: ReactNode })
       className={clsx(
         'rounded-lg px-3 py-2 text-sm',
         kind === 'ok'
-          ? 'bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-200'
+          ? 'bg-brand-50 text-brand-700 dark:bg-[var(--accent-soft)] dark:text-brand-200'
           : 'bg-red-50 text-red-600 dark:bg-red-950/50 dark:text-red-300',
       )}
     >
@@ -111,9 +121,11 @@ function ProfileTab() {
   }
 
   return (
-    <form onSubmit={save} className="space-y-4">
-      <h3 className="font-display text-[15px] font-bold">Profil</h3>
-      {msg && <Notice kind={msg.kind}>{msg.text}</Notice>}
+    <div className="space-y-6">
+      <StatusPicker />
+      <form onSubmit={save} className="space-y-4">
+        <h3 className="font-display text-md font-bold">Profil</h3>
+        {msg && <Notice kind={msg.kind}>{msg.text}</Notice>}
       <Field label="Nom complet">
         <input className="input" value={fullName} onChange={(e) => setFullName(e.target.value)} minLength={2} required />
       </Field>
@@ -123,10 +135,11 @@ function ProfileTab() {
       <Field label="Email">
         <input className="input opacity-60" value={user?.email ?? ''} disabled />
       </Field>
-      <button className="btn-primary" disabled={busy}>
-        {busy ? 'Enregistrement…' : 'Enregistrer'}
-      </button>
-    </form>
+        <button className="btn-primary" disabled={busy}>
+          {busy ? 'Enregistrement…' : 'Enregistrer'}
+        </button>
+      </form>
+    </div>
   );
 }
 
@@ -140,7 +153,7 @@ function AppearanceTab() {
   return (
     <div className="space-y-5">
       <div>
-        <h3 className="font-display text-[15px] font-bold">Theme</h3>
+        <h3 className="font-display text-md font-bold">Theme</h3>
         <div className="mt-3 grid grid-cols-3 gap-3">
           {opts.map(({ id, label, Icon }) => (
             <button
@@ -162,7 +175,7 @@ function AppearanceTab() {
       </div>
 
       <div>
-        <h3 className="font-display text-[15px] font-bold">Couleur d'accent</h3>
+        <h3 className="font-display text-md font-bold">Couleur d'accent</h3>
         <p className="mb-3 text-sm text-[var(--text-dim)]">
           Appliquee a toute l'interface (sauf si un espace impose sa propre couleur).
         </p>
@@ -202,7 +215,7 @@ function SecurityTab() {
 
   return (
     <form onSubmit={submit} className="space-y-4">
-      <h3 className="font-display text-[15px] font-bold">Securite</h3>
+      <h3 className="font-display text-md font-bold">Securite</h3>
       {msg && <Notice kind={msg.kind}>{msg.text}</Notice>}
       <Field label="Mot de passe actuel">
         <input className="input" type="password" value={cur} onChange={(e) => setCur(e.target.value)} required />
@@ -253,12 +266,12 @@ function AccountTab({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="space-y-4">
-      <h3 className="font-display text-[15px] font-bold">Compte</h3>
+      <h3 className="font-display text-md font-bold">Compte</h3>
       <div className="rounded-xl border border-[var(--outline)] p-4 text-sm">
         <div className="font-semibold">{user?.fullName}</div>
         <div className="text-[var(--text-dim)]">{user?.email}</div>
       </div>
-      <button onClick={doLogout} className="btn bg-red-600 text-white hover:bg-red-700">
+      <button onClick={doLogout} className="btn-danger">
         <IconLogout className="h-4 w-4" /> Se deconnecter
       </button>
     </div>

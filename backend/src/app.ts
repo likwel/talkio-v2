@@ -18,6 +18,8 @@ import calendarRoutes from './modules/calendar/calendar.routes';
 import friendRoutes from './modules/friends/friends.routes';
 import userRoutes from './modules/users/users.routes';
 import automationRoutes from './modules/automations/automations.routes';
+import publicRoutes from './modules/public/public.routes';
+import uploadRoutes, { UPLOAD_DIR } from './modules/uploads/uploads.routes';
 
 export function createApp() {
   const app = express();
@@ -29,6 +31,9 @@ export function createApp() {
 
   app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'talkio-api', ts: Date.now() }));
 
+  app.use('/api/public', publicRoutes);
+  app.use('/api/uploads/files', express.static(UPLOAD_DIR, { maxAge: '7d', index: false }));
+  app.use('/api/uploads', authenticate, uploadRoutes);
   app.use('/api/auth', authRoutes);
   app.use('/api/workspaces', authenticate, workspaceRoutes);
   app.use('/api/channels', authenticate, channelRoutes);

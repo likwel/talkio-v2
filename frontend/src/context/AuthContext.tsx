@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, ReactNode } from 'react';
 import { api, setTokens, getAccessToken } from '@/lib/api';
 import { connectSocket, disconnectSocket } from '@/lib/socket';
-import type { User } from '@/lib/types';
+import type { PresenceStatus, User } from '@/lib/types';
 
 interface AuthState {
   user: User | null;
@@ -11,6 +11,8 @@ interface AuthState {
   logout: () => void;
   /** Remplace l'utilisateur en memoire (apres edition de profil). */
   patchUser: (u: User) => void;
+  /** Change le statut de presence (En ligne / Absent / Occupe / Invisible). */
+  setStatus: (status: PresenceStatus) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | undefined>(undefined);
@@ -58,6 +60,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         disconnectSocket();
       },
       patchUser: (u) => setUser(u),
+      setStatus: async (status) => {
+        const r = await api.patch('/users/me/status', { status });
+        setUser((u) => (u ? { ...u, presenceStatus: r.data.presenceStatus } : u));
+      },
     }),
     [user, loading],
   );

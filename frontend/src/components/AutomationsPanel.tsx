@@ -6,6 +6,7 @@ import { useWorkspace } from '@/context/WorkspaceContext';
 import { useDialog } from '@/context/DialogContext';
 import type { Automation, Board, Channel } from '@/lib/types';
 import { IconAdd, IconClose, IconForward } from '@/lib/icons';
+import Select from '@/components/Select';
 
 const TRIGGERS: { id: Automation['triggerType']; label: string }[] = [
   { id: 'form.response.created', label: 'Une reponse de formulaire est envoyee' },
@@ -60,7 +61,7 @@ export default function AutomationsPanel() {
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="font-display text-[15px] font-bold">Automatisation</h3>
+          <h3 className="font-display text-md font-bold">Automatisation</h3>
           <p className="text-sm text-[var(--text-dim)]">
             Reliez messagerie, projet, MEAL et collecte : quand un evenement se produit, une action est declenchee.
           </p>
@@ -101,7 +102,7 @@ export default function AutomationsPanel() {
                 />
               </button>
               <span className="min-w-0 flex-1 truncate text-sm font-semibold">{a.name}</span>
-              <span className="text-[11px] text-[var(--text-dim)]">{a.runCount}x</span>
+              <span className="text-2xs text-[var(--text-dim)]">{a.runCount}x</span>
               <button className="icon-btn-sm text-red-500" onClick={() => remove(a)} title="Supprimer">
                 <IconClose className="h-4 w-4" />
               </button>
@@ -174,13 +175,12 @@ function CreateForm({
 
       <label className="block text-xs font-semibold text-[var(--text-dim)]">
         Quand…
-        <select className="input mt-1" value={triggerType} onChange={(e) => setTriggerType(e.target.value as any)}>
-          {TRIGGERS.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.label}
-            </option>
-          ))}
-        </select>
+        <Select
+          className="mt-1"
+          value={triggerType}
+          onChange={(v) => setTriggerType(v as any)}
+          options={TRIGGERS.map((t) => ({ value: t.id, label: t.label }))}
+        />
       </label>
       {triggerType === 'message.keyword' && (
         <input className="input" placeholder="Mot-cle (ex: #tache)" value={keyword} onChange={(e) => setKeyword(e.target.value)} />
@@ -188,35 +188,30 @@ function CreateForm({
 
       <label className="block text-xs font-semibold text-[var(--text-dim)]">
         Alors…
-        <select className="input mt-1" value={actionType} onChange={(e) => setActionType(e.target.value as any)}>
-          {ACTIONS.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.label}
-            </option>
-          ))}
-        </select>
+        <Select
+          className="mt-1"
+          value={actionType}
+          onChange={(v) => setActionType(v as any)}
+          options={ACTIONS.map((a) => ({ value: a.id, label: a.label }))}
+        />
       </label>
 
       {actionType === 'message.post' ? (
-        <select className="input" value={channelId} onChange={(e) => setChannelId(e.target.value)}>
-          <option value="">Choisir un salon…</option>
-          {channels
+        <Select
+          value={channelId}
+          onChange={setChannelId}
+          placeholder="Choisir un salon…"
+          options={channels
             .filter((c) => c.type !== 'DIRECT')
-            .map((c) => (
-              <option key={c.id} value={c.id}>
-                # {c.name}
-              </option>
-            ))}
-        </select>
+            .map((c) => ({ value: c.id, label: `# ${c.name}` }))}
+        />
       ) : (
-        <select className="input" value={columnId} onChange={(e) => setColumnId(e.target.value)}>
-          <option value="">Choisir une colonne…</option>
-          {columns.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.label}
-            </option>
-          ))}
-        </select>
+        <Select
+          value={columnId}
+          onChange={setColumnId}
+          placeholder="Choisir une colonne…"
+          options={columns.map((c) => ({ value: c.id, label: c.label }))}
+        />
       )}
 
       <label className="block text-xs font-semibold text-[var(--text-dim)]">

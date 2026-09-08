@@ -34,7 +34,7 @@ export default function Modal({ open, onClose, title, children, footer, size = '
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-[2px]"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 backdrop-blur-[2px] sm:items-center sm:p-4"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget && !locked) onClose();
       }}
@@ -43,13 +43,15 @@ export default function Modal({ open, onClose, title, children, footer, size = '
         role="dialog"
         aria-modal="true"
         className={clsx(
-          'flex max-h-[85vh] w-full flex-col overflow-hidden rounded-2xl border border-[var(--outline)] bg-[var(--surface)] shadow-elevation-3',
+          'flex max-h-[92vh] w-full flex-col overflow-hidden border border-[var(--outline)] bg-[var(--surface)] shadow-elevation-3',
+          'rounded-t-2xl safe-b sm:max-h-[85vh] sm:rounded-2xl sm:pb-0',
           SIZE[size],
         )}
       >
+        <div className="mx-auto mt-2 h-1 w-9 shrink-0 rounded-full bg-[var(--outline)] sm:hidden" />
         {title !== undefined && (
           <div className="flex items-center justify-between gap-4 border-b border-[var(--outline)] px-5 py-3.5">
-            <h2 className="font-display text-[17px] font-bold">{title}</h2>
+            <h2 className="font-display text-lg font-bold">{title}</h2>
             {!locked && (
               <button className="icon-btn-sm -mr-1" onClick={onClose} aria-label="Fermer">
                 <IconClose className="h-5 w-5" />

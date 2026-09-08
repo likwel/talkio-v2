@@ -20,7 +20,7 @@ export default function ColorPicker({ value, onChange, allowNone, presets = ACCE
           onClick={() => onChange(null)}
           title="Par defaut"
           className={clsx(
-            'grid h-8 w-8 place-items-center rounded-full border-2 text-[10px] font-bold text-[var(--text-dim)]',
+            'grid h-8 w-8 place-items-center rounded-full border-2 text-2xs font-bold text-[var(--text-dim)]',
             !value ? 'border-[var(--accent)]' : 'border-[var(--outline)]',
           )}
         >
@@ -50,7 +50,7 @@ export default function ColorPicker({ value, onChange, allowNone, presets = ACCE
         <input
           type="color"
           className="sr-only"
-          value={/^#[0-9a-f]{6}$/i.test(norm) ? norm : '#0cae36'}
+          value={/^#[0-9a-f]{6}$/i.test(norm) ? norm : '#3390ec'}
           onChange={(e) => onChange(e.target.value)}
         />
       </label>

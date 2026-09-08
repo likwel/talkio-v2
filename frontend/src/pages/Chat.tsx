@@ -7,7 +7,10 @@ import { getSocket } from '@/lib/socket';
 import { useWorkspace } from '@/context/WorkspaceContext';
 import { useAuth } from '@/context/AuthContext';
 import { useProfile } from '@/context/ProfileContext';
-import type { ActiveCall, Channel, Message } from '@/lib/types';
+import { useDialog } from '@/context/DialogContext';
+import { usePresence, DOT_LABEL, type PresenceDotState } from '@/context/PresenceContext';
+import PresenceDot from '@/components/PresenceDot';
+import type { ActiveCall, Attachment, Channel, Message } from '@/lib/types';
 import {
   IconAdd,
   IconCall,
@@ -15,14 +18,23 @@ import {
   IconSearch,
   IconSend,
   IconHash,
-  IconAt,
   IconGroups,
   IconCallFill,
   IconVideoFill,
   IconFriends,
   IconBack,
   IconSettings,
+  IconAttach,
+  IconFile,
+  IconClose,
+  IconEdit,
+  IconDelete,
+  IconReply,
+  IconShare,
+  IconTick,
 } from '@/lib/icons';
+import Modal from '@/components/Modal';
+import Wordmark from '@/components/Wordmark';
 import NewConversationModal from '@/components/NewConversationModal';
 import FriendsModal from '@/components/FriendsModal';
 import ChannelSettingsModal from '@/components/ChannelSettingsModal';
@@ -40,13 +52,32 @@ function avColor(id: string) {
   return AV_COLORS[h % AV_COLORS.length];
 }
 
-function Avatar({ id, name, size = 36 }: { id: string; name?: string | null; size?: number }) {
+function Avatar({
+  id,
+  name,
+  size = 36,
+  status,
+}: {
+  id: string;
+  name?: string | null;
+  size?: number;
+  status?: PresenceDotState;
+}) {
   return (
-    <span
-      className="grid shrink-0 place-items-center rounded-full font-semibold text-white"
-      style={{ width: size, height: size, background: avColor(id), fontSize: size * 0.38 }}
-    >
-      {initials(name)}
+    <span className="relative inline-block shrink-0" style={{ width: size, height: size }}>
+      <span
+        className="grid h-full w-full place-items-center rounded-full font-semibold text-white"
+        style={{ background: avColor(id), fontSize: size * 0.38 }}
+      >
+        {initials(name)}
+      </span>
+      {status && (
+        <PresenceDot
+          state={status}
+          size={Math.max(8, Math.round(size * 0.28))}
+          className="absolute bottom-0 right-0"
+        />
+      )}
     </span>
   );
 }
@@ -66,11 +97,23 @@ export default function Chat() {
   const [chanSettingsOpen, setChanSettingsOpen] = useState(false);
   const [wsSettingsOpen, setWsSettingsOpen] = useState(false);
   const [newChannel, setNewChannel] = useState('');
+  const [pending, setPending] = useState<Attachment[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+  const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const [editing, setEditing] = useState<{ id: string; body: string } | null>(null);
+  const [mention, setMention] = useState<{ from: number; query: string } | null>(null);
+  const [sharing, setSharing] = useState<Message | null>(null);
   const { openProfile } = useProfile();
+  const { presenceOf } = usePresence();
+  const dialog = useDialog();
   // Mobile : on affiche soit la liste, soit la conversation
   const [mobileView, setMobileView] = useState<'list' | 'thread'>(channelId ? 'thread' : 'list');
   const bottomRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const MAX_UPLOAD = 2 * 1024 * 1024;
 
   useEffect(() => {
     setMobileView(channelId ? 'thread' : 'list');
@@ -79,6 +122,7 @@ export default function Chat() {
   const channels = useQuery({
     queryKey: ['channels', current?.id],
     enabled: !!current,
+    refetchInterval: 30_000,
     queryFn: async () => (await api.get<Channel[]>('/channels', { params: { workspaceId: current!.id } })).data,
   });
 
@@ -100,7 +144,11 @@ export default function Chat() {
     const sub = () => socket.emit('calls:subscribe', current.id);
     sub();
     socket.on('connect', sub);
-    const onChange = () => qc.invalidateQueries({ queryKey: ['activeCalls'] });
+    const onChange = () => {
+      qc.invalidateQueries({ queryKey: ['activeCalls'] });
+      // Rafraichit le fil pour mettre a jour les evenements d'appel (duree, "termine").
+      qc.invalidateQueries({ queryKey: ['messages'] });
+    };
     socket.on('calls:active-changed', onChange);
     return () => {
       socket.emit('calls:unsubscribe', current.id);
@@ -147,14 +195,39 @@ export default function Chat() {
     const onNew = (m: Message) => {
       if (m.channelId === activeId) {
         qc.setQueryData<Message[]>(['messages', activeId], (old = []) => [...old, m]);
+        api.post(`/channels/${activeId}/read`).catch(() => {});
       }
+      qc.invalidateQueries({ queryKey: ['channels', current?.id] });
+    };
+    const onUpdated = (m: Message) => {
+      if (m.channelId !== activeId) return;
+      qc.setQueryData<Message[]>(['messages', activeId], (old = []) =>
+        old.map((x) => (x.id === m.id ? m : x)),
+      );
+    };
+    const onDeleted = ({ id }: { id: string }) => {
+      qc.setQueryData<Message[]>(['messages', activeId], (old = []) => old.filter((x) => x.id !== id));
+      qc.invalidateQueries({ queryKey: ['channels', current?.id] });
     };
     socket.on('message:new', onNew);
+    socket.on('message:updated', onUpdated);
+    socket.on('message:deleted', onDeleted);
     return () => {
       socket.emit('channel:unsubscribe', activeId);
       socket.off('message:new', onNew);
+      socket.off('message:updated', onUpdated);
+      socket.off('message:deleted', onDeleted);
     };
-  }, [activeId, qc]);
+  }, [activeId, qc, current?.id]);
+
+  // Marque le salon comme lu a l'ouverture.
+  useEffect(() => {
+    if (!activeId) return;
+    api
+      .post(`/channels/${activeId}/read`)
+      .then(() => qc.invalidateQueries({ queryKey: ['channels', current?.id] }))
+      .catch(() => {});
+  }, [activeId, qc, current?.id]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -167,18 +240,95 @@ export default function Chat() {
     ta.style.height = Math.min(ta.scrollHeight, 160) + 'px';
   }, [draft]);
 
+  async function uploadFiles(files: FileList | null) {
+    if (!files?.length) return;
+    setUploadError('');
+    for (const file of Array.from(files)) {
+      if (file.size > MAX_UPLOAD) {
+        setUploadError(`« ${file.name} » depasse la limite de 2 Mo.`);
+        continue;
+      }
+      setUploading(true);
+      try {
+        const r = await api.post<Attachment>('/uploads', file, {
+          headers: { 'Content-Type': file.type || 'application/octet-stream' },
+          params: { name: file.name },
+        });
+        setPending((a) => [...a, r.data]);
+      } catch {
+        setUploadError("Echec de l'envoi du fichier.");
+      } finally {
+        setUploading(false);
+      }
+    }
+    if (fileRef.current) fileRef.current.value = '';
+  }
+
   async function send() {
-    if (!draft.trim() || !activeId) return;
     const body = draft.trim();
+    if ((!body && pending.length === 0) || !activeId || uploading) return;
+    const atts = pending.map(({ url, name, mimeType, size }) => ({ url, name, mimeType, size }));
+    const parentId = replyTo?.id;
     setDraft('');
-    await api.post('/messages', { channelId: activeId, body });
+    setPending([]);
+    setUploadError('');
+    setReplyTo(null);
+    setMention(null);
+    await api.post('/messages', { channelId: activeId, body, attachments: atts, parentId });
+    qc.invalidateQueries({ queryKey: ['channels', current?.id] });
+  }
+
+  async function saveEdit() {
+    if (!editing || !editing.body.trim()) return;
+    const { id, body } = editing;
+    setEditing(null);
+    await api.patch(`/messages/${id}`, { body: body.trim() });
+  }
+
+  async function deleteMessage(m: Message) {
+    const ok = await dialog.confirm({
+      title: 'Supprimer le message',
+      message: 'Ce message sera definitivement supprime.',
+      confirmLabel: 'Supprimer',
+      danger: true,
+    });
+    if (ok) await api.delete(`/messages/${m.id}`);
   }
 
   function onComposerKey(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === 'Escape') {
+      setReplyTo(null);
+      setMention(null);
+      return;
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
+      if (mention && mentionCandidates.length) {
+        e.preventDefault();
+        insertMention(mentionCandidates[0].fullName);
+        return;
+      }
       e.preventDefault();
       send();
     }
+  }
+
+  /** Detecte `@mot` en cours de frappe pour proposer les membres. */
+  function onDraftChange(value: string, caret: number) {
+    setDraft(value);
+    const m = value.slice(0, caret).match(/(?:^|\s)@([^\s@]*)$/);
+    if (m) setMention({ from: caret - m[1].length - 1, query: m[1].toLowerCase() });
+    else setMention(null);
+  }
+
+  function insertMention(name: string) {
+    if (!mention) return;
+    const first = name.split(/\s+/)[0];
+    const before = draft.slice(0, mention.from);
+    const after = draft.slice(mention.from).replace(/^@[^\s@]*/, '');
+    const next = `${before}@${first} ${after.replace(/^\s+/, '')}`;
+    setDraft(next);
+    setMention(null);
+    setTimeout(() => taRef.current?.focus(), 0);
   }
 
   async function createSalon(e: FormEvent) {
@@ -218,8 +368,41 @@ export default function Chat() {
   const filtDms = q ? dms.filter((c) => channelTitle(c).toLowerCase().includes(q)) : dms;
 
   const groups = useMemo(() => groupMessages(messages.data ?? []), [messages.data]);
+  const activeRoomIds = useMemo(
+    () => new Set((activeCalls.data ?? []).map((c) => c.roomId)),
+    [activeCalls.data],
+  );
 
   const headerCall = activeId ? callByChannel.get(activeId) : undefined;
+  const memberCount = activeChannel?._count?.members ?? activeChannel?.members?.length ?? 0;
+
+  const memberUsers = useMemo(
+    () => (activeChannel?.members ?? []).map((m) => m.user),
+    [activeChannel],
+  );
+  const mentionNames = useMemo(
+    () => new Set(memberUsers.map((u) => u.fullName.split(/\s+/)[0].toLowerCase())),
+    [memberUsers],
+  );
+  const mentionCandidates =
+    mention && mention.query
+      ? memberUsers.filter((u) => u.fullName.toLowerCase().includes(mention.query)).slice(0, 6)
+      : memberUsers.slice(0, 6);
+
+  function renderBody(text: string) {
+    return text.split(/(@[^\s@]+)/g).map((part, i) =>
+      part[0] === '@' && mentionNames.has(part.slice(1).toLowerCase()) ? (
+        <span
+          key={i}
+          className="rounded bg-[var(--accent-soft)] px-0.5 font-semibold text-[var(--accent-strong)]"
+        >
+          {part}
+        </span>
+      ) : (
+        <span key={i}>{part}</span>
+      ),
+    );
+  }
 
   return (
     <div className="flex h-full">
@@ -232,8 +415,8 @@ export default function Chat() {
       >
         <div className="border-b border-[var(--outline)] p-3">
           <div className="mb-2 flex items-center gap-2">
-            <span className="min-w-0 flex-1 truncate font-display text-[15px] font-bold">
-              {current?.name ?? 'Talkio'}
+            <span className="min-w-0 flex-1 truncate font-display text-md font-bold">
+              {current?.name ?? <Wordmark size="sm" />}
             </span>
             <button className="icon-btn-sm" title="Amis" onClick={() => setFriendsOpen(true)}>
               <IconFriends className="h-[18px] w-[18px]" />
@@ -245,7 +428,7 @@ export default function Chat() {
           <div className="relative">
             <IconSearch className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-dim)]" />
             <input
-              className="input h-9 pl-8 text-[13px]"
+              className="input h-9 pl-8 text-base"
               placeholder="Rechercher"
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
@@ -259,7 +442,7 @@ export default function Chat() {
             <form onSubmit={createSalon} className="px-1 pb-1">
               <input
                 autoFocus
-                className="input h-8 text-[13px]"
+                className="input h-9 text-base"
                 placeholder="nom-du-salon"
                 value={newChannel}
                 onChange={(e) => setNewChannel(e.target.value)}
@@ -281,9 +464,10 @@ export default function Chat() {
                 }
                 label={c.name ?? 'salon'}
                 call={callByChannel.get(c.id)}
+                unread={c.unreadCount}
               />
             ))}
-            {filtSalons.length === 0 && <li className="px-3 py-1 text-xs text-[var(--text-dim)]">Aucun salon</li>}
+            {filtSalons.length === 0 && <li className="px-3 py-1 text-sm text-[var(--text-dim)]">Aucun salon</li>}
           </ul>
 
           <SectionHeader label="Messages directs" onAdd={() => setDmModalOpen(true)} />
@@ -302,16 +486,22 @@ export default function Chat() {
                         <IconGroups className="h-3.5 w-3.5" />
                       </span>
                     ) : (
-                      <Avatar id={p?.id ?? c.id} name={p?.fullName} size={20} />
+                      <Avatar
+                        id={p?.id ?? c.id}
+                        name={p?.fullName}
+                        size={22}
+                        status={p ? presenceOf(p.id, p.presenceStatus) : undefined}
+                      />
                     )
                   }
                   label={channelTitle(c)}
                   call={callByChannel.get(c.id)}
+                  unread={c.unreadCount}
                 />
               );
             })}
             {filtDms.length === 0 && (
-              <li className="px-3 py-1 text-xs text-[var(--text-dim)]">Aucune conversation</li>
+              <li className="px-3 py-1 text-sm text-[var(--text-dim)]">Aucune conversation</li>
             )}
           </ul>
         </div>
@@ -330,6 +520,13 @@ export default function Chat() {
         onChanged={() => channels.refetch()}
       />
       <WorkspaceSettingsModal open={wsSettingsOpen} onClose={() => setWsSettingsOpen(false)} />
+      <ShareModal
+        message={sharing}
+        channels={channels.data ?? []}
+        currentUserId={user?.id}
+        onClose={() => setSharing(null)}
+        onShared={() => qc.invalidateQueries({ queryKey: ['channels', current?.id] })}
+      />
 
       {/* ---------- Chat ---------- */}
       <div
@@ -349,33 +546,74 @@ export default function Chat() {
           >
             <IconBack className="h-5 w-5" />
           </button>
-          {activeChannel?.color ? (
-            <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: activeChannel.color }} />
-          ) : activeChannel?.type !== 'DIRECT' ? (
-            <IconHash className="h-5 w-5 shrink-0 text-[var(--text-dim)]" />
-          ) : isGroup(activeChannel) ? (
-            <IconGroups className="h-5 w-5 shrink-0 text-[var(--text-dim)]" />
-          ) : (
-            <IconAt className="h-5 w-5 shrink-0 text-[var(--text-dim)]" />
-          )}
-          <span className="truncate font-display text-[15px] font-bold">{channelTitle(activeChannel)}</span>
+          {(() => {
+            const partner =
+              activeChannel && activeChannel.type === 'DIRECT' && !isGroup(activeChannel)
+                ? dmPartner(activeChannel)
+                : undefined;
+            if (partner) {
+              const st = presenceOf(partner.id, partner.presenceStatus);
+              return (
+                <>
+                  <button onClick={() => openProfile(partner.id)} className="shrink-0" title="Voir le profil">
+                    <Avatar id={partner.id} name={partner.fullName} size={34} status={st} />
+                  </button>
+                  <div className="min-w-0 flex-1 leading-tight">
+                    <div className="truncate font-display text-md font-bold">{partner.fullName}</div>
+                    <div className="truncate text-2xs text-[var(--text-dim)]">{DOT_LABEL[st]}</div>
+                  </div>
+                </>
+              );
+            }
+            return (
+              <>
+                {activeChannel?.color ? (
+                  <span
+                    className="h-3 w-3 shrink-0 rounded-full"
+                    style={{ background: activeChannel.color }}
+                  />
+                ) : activeChannel?.type !== 'DIRECT' ? (
+                  <IconHash className="h-5 w-5 shrink-0 text-[var(--text-dim)]" />
+                ) : (
+                  <IconGroups className="h-5 w-5 shrink-0 text-[var(--text-dim)]" />
+                )}
+                <span className="min-w-0 flex-1 truncate font-display text-md font-bold">
+                  {channelTitle(activeChannel)}
+                </span>
+              </>
+            );
+          })()}
           {activeChannel?.topic && (
             <>
-              <span className="hidden h-4 w-px bg-[var(--outline)] sm:block" />
-              <span className="hidden truncate text-[13px] text-[var(--text-dim)] sm:block">
+              <span className="hidden h-4 w-px shrink-0 bg-[var(--outline)] xl:block" />
+              <span className="hidden max-w-[240px] shrink truncate text-sm text-[var(--text-dim)] xl:block">
                 {activeChannel.topic}
               </span>
             </>
           )}
-          <div className="ml-auto flex shrink-0 items-center gap-1">
-            <button className="icon-btn" title="Appel audio" onClick={() => startCall('AUDIO')}>
-              <IconCall className="h-5 w-5" />
+          <div className="ml-auto flex shrink-0 items-center gap-0.5 rounded-full border border-[var(--outline)] bg-[var(--surface)] p-0.5">
+            <button
+              className="grid h-8 w-8 place-items-center rounded-full text-[var(--text-dim)] transition hover:bg-[var(--accent-soft)] hover:text-[var(--accent-strong)]"
+              title="Appel audio"
+              onClick={() => startCall('AUDIO')}
+            >
+              <IconCall className="h-[18px] w-[18px]" />
             </button>
-            <button className="icon-btn" title="Visio" onClick={() => startCall('VIDEO')}>
-              <IconVideo className="h-5 w-5" />
+            <button
+              className="grid h-8 w-8 place-items-center rounded-full text-[var(--text-dim)] transition hover:bg-[var(--accent-soft)] hover:text-[var(--accent-strong)]"
+              title="Visio"
+              onClick={() => startCall('VIDEO')}
+            >
+              <IconVideo className="h-[18px] w-[18px]" />
             </button>
-            <button className="icon-btn" title="Membres et parametres" onClick={() => setChanSettingsOpen(true)}>
-              <IconGroups className="h-5 w-5" />
+            <span className="mx-0.5 h-4 w-px bg-[var(--outline)]" />
+            <button
+              className="flex h-8 items-center gap-1.5 rounded-full px-2.5 text-sm font-semibold text-[var(--text-dim)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
+              title="Membres et parametres du salon"
+              onClick={() => setChanSettingsOpen(true)}
+            >
+              <IconGroups className="h-[18px] w-[18px]" />
+              {memberCount > 0 && <span>{memberCount}</span>}
             </button>
           </div>
         </div>
@@ -383,11 +621,11 @@ export default function Chat() {
         {headerCall && (
           <button
             onClick={() => navigate(`/call/${headerCall.roomId}`)}
-            className="flex items-center gap-2 border-b border-[var(--outline)] bg-brand-500/10 px-4 py-2 text-left text-[13px] font-semibold text-brand-700 transition hover:bg-brand-500/15 dark:text-brand-300"
+            className="flex items-center gap-2 border-b border-[var(--outline)] bg-[var(--accent-soft)] px-4 py-2 text-left text-sm font-semibold text-brand-700 transition hover:bg-[var(--accent-soft)] dark:text-brand-300"
           >
             <span className="relative flex h-2.5 w-2.5">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand-500 opacity-75" />
-              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-brand-500" />
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--accent)] opacity-75" />
+              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[var(--accent)]" />
             </span>
             {headerCall.type === 'VIDEO' ? 'Visio en cours' : 'Appel en cours'} · {headerCall.participants} participant(s)
             <span className="ml-auto rounded-full bg-[var(--accent)] px-3 py-1 text-white">Rejoindre</span>
@@ -407,55 +645,278 @@ export default function Chat() {
             </div>
           )}
           <div className="space-y-4">
-            {groups.map((g, gi) => (
-              <div key={gi} className="flex gap-3">
-                <button onClick={() => openProfile(g.author.id)} className="shrink-0" title="Voir le profil">
-                  <Avatar id={g.author.id} name={g.author.fullName} />
-                </button>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-baseline gap-2">
-                    <button
-                      onClick={() => openProfile(g.author.id)}
-                      className="text-[13px] font-semibold hover:underline"
-                    >
-                      {g.author.fullName}
-                    </button>
-                    <span className="text-[11px] text-[var(--text-dim)]">
-                      {new Date(g.items[0].createdAt).toLocaleString('fr-FR', {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        day: '2-digit',
-                        month: 'short',
+            {groups.map((g, gi) => {
+              const mine = g.author.id === user?.id;
+              const callMsg = g.items[0].kind === 'CALL' ? g.items[0] : null;
+              if (callMsg) {
+                return (
+                  <CallEvent
+                    key={gi}
+                    m={callMsg}
+                    mine={mine}
+                    live={!!callMsg.call && activeRoomIds.has(callMsg.call.roomId)}
+                    onJoin={() => callMsg.call && navigate(`/call/${callMsg.call.roomId}`)}
+                  />
+                );
+              }
+              return (
+                <div key={gi} className="flex items-start gap-3">
+                  <button
+                    onClick={() => openProfile(g.author.id)}
+                    className="shrink-0 self-start"
+                    title="Voir le profil"
+                  >
+                    <Avatar
+                      id={g.author.id}
+                      name={g.author.fullName}
+                      status={presenceOf(g.author.id, g.author.presenceStatus)}
+                    />
+                  </button>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline gap-2">
+                      {/* Nom facon WhatsApp : petit, colore, italique */}
+                      <button
+                        onClick={() => openProfile(g.author.id)}
+                        className="text-2xs font-semibold italic hover:underline"
+                        style={{ color: avColor(g.author.id) }}
+                      >
+                        {g.author.fullName}
+                      </button>
+                      <span className="text-2xs text-[var(--text-dim)]">
+                        {new Date(g.items[0].createdAt).toLocaleString('fr-FR', {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          day: '2-digit',
+                          month: 'short',
+                        })}
+                      </span>
+                    </div>
+
+                    <div className="mt-1 flex flex-col gap-1">
+                      {g.items.map((m, mi) => {
+                        const isEditing = editing?.id === m.id;
+                        return (
+                          <div
+                            key={m.id}
+                            className={clsx(
+                              'group/msg relative w-fit max-w-[min(100%,640px)] rounded-2xl px-3 py-2 text-base leading-relaxed shadow-[0_1px_2px_rgba(0,0,0,0.05)] transition-colors',
+                              mi === 0 ? 'rounded-tl-md' : 'rounded-tl-2xl',
+                              mine
+                                ? 'border border-transparent bg-[var(--accent-soft)] text-[var(--text)]'
+                                : 'border border-[var(--outline)] bg-[var(--surface)] hover:border-[var(--accent)]',
+                            )}
+                          >
+                            {/* Barre d'actions au survol */}
+                            {!isEditing && (
+                              <div className="absolute -top-3 right-1 z-10 hidden items-center gap-0.5 rounded-lg border border-[var(--outline)] bg-[var(--surface)] px-0.5 py-0.5 shadow-elevation-1 group-hover/msg:flex">
+                                {!mine && (
+                                  <button
+                                    className="icon-btn-sm"
+                                    title="Repondre"
+                                    onClick={() => {
+                                      setReplyTo(m);
+                                      taRef.current?.focus();
+                                    }}
+                                  >
+                                    <IconReply className="h-4 w-4" />
+                                  </button>
+                                )}
+                                <button
+                                  className="icon-btn-sm"
+                                  title="Partager dans un autre canal"
+                                  onClick={() => setSharing(m)}
+                                >
+                                  <IconShare className="h-4 w-4" />
+                                </button>
+                                {mine && (
+                                  <button
+                                    className="icon-btn-sm"
+                                    title="Modifier"
+                                    onClick={() => setEditing({ id: m.id, body: m.body })}
+                                  >
+                                    <IconEdit className="h-4 w-4" />
+                                  </button>
+                                )}
+                                {mine && (
+                                  <button
+                                    className="icon-btn-sm text-red-500"
+                                    title="Supprimer"
+                                    onClick={() => deleteMessage(m)}
+                                  >
+                                    <IconDelete className="h-4 w-4" />
+                                  </button>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Message transfere */}
+                            {m.forwardedFrom && (
+                              <div className="mb-0.5 flex items-center gap-1 text-2xs italic text-[var(--text-dim)]">
+                                <IconShare className="h-3 w-3" />
+                                Transfere{m.forwardedFrom !== g.author.fullName ? ` · de ${m.forwardedFrom}` : ''}
+                              </div>
+                            )}
+
+                            {/* Message cite */}
+                            {m.parent && (
+                              <div className="mb-0.5 border-l-2 border-[var(--accent)] pl-2 text-xs">
+                                <span
+                                  className="font-semibold"
+                                  style={{ color: avColor(m.parent.author.id) }}
+                                >
+                                  {m.parent.author.fullName}
+                                </span>
+                                <span className="ml-1 text-[var(--text-dim)] line-clamp-1">
+                                  {m.parent.body || 'piece jointe'}
+                                </span>
+                              </div>
+                            )}
+
+                            {isEditing ? (
+                              <div className="space-y-1.5 py-1">
+                                <textarea
+                                  autoFocus
+                                  className="input text-base"
+                                  rows={2}
+                                  value={editing!.body}
+                                  onChange={(e) => setEditing({ id: m.id, body: e.target.value })}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter' && !e.shiftKey) {
+                                      e.preventDefault();
+                                      saveEdit();
+                                    }
+                                    if (e.key === 'Escape') setEditing(null);
+                                  }}
+                                />
+                                <div className="flex gap-1.5">
+                                  <button className="btn-primary btn-sm" onClick={saveEdit}>
+                                    Enregistrer
+                                  </button>
+                                  <button className="btn-text btn-sm" onClick={() => setEditing(null)}>
+                                    Annuler
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              m.body && (
+                                <p className="whitespace-pre-wrap break-words">
+                                  {renderBody(m.body)}
+                                  {m.editedAt && (
+                                    <span className="ml-1 text-2xs text-[var(--text-dim)]">(modifie)</span>
+                                  )}
+                                </p>
+                              )
+                            )}
+
+                            {!!m.attachments?.length && (
+                              <div className="mt-1 flex flex-wrap gap-2">
+                                {m.attachments.map((a) => (
+                                  <AttachmentView key={a.id} a={a} />
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
                       })}
-                    </span>
+                    </div>
                   </div>
-                  {g.items.map((m) => (
-                    <p key={m.id} className="whitespace-pre-wrap break-words text-[14px] leading-relaxed">
-                      {m.body}
-                      {m.editedAt && <span className="ml-1 text-[10px] text-[var(--text-dim)]">(modifie)</span>}
-                    </p>
-                  ))}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
           <div ref={bottomRef} />
         </div>
 
-        <div className="px-3 pb-3 sm:px-4 sm:pb-4">
-          <div className="flex items-end gap-2 rounded-2xl border border-[var(--outline)] bg-[var(--surface)] p-2 focus-within:border-[var(--accent)] focus-within:ring-4 focus-within:ring-brand-500/15">
+        <div className="relative px-3 pb-3 sm:px-4 sm:pb-4">
+          {/* Suggestions de mention */}
+          {mention && mentionCandidates.length > 0 && (
+            <div className="absolute bottom-full left-3 right-3 mb-1 max-h-52 overflow-y-auto rounded-xl border border-[var(--outline)] bg-[var(--surface)] p-1 shadow-elevation-3 sm:left-4 sm:right-4">
+              {mentionCandidates.map((u) => (
+                <button
+                  key={u.id}
+                  onClick={() => insertMention(u.fullName)}
+                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-[var(--surface-2)]"
+                >
+                  <Avatar id={u.id} name={u.fullName} size={22} />
+                  <span className="min-w-0 flex-1 truncate">{u.fullName}</span>
+                  <span className="text-2xs text-[var(--text-dim)]">
+                    @{u.fullName.split(/\s+/)[0]}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {replyTo && (
+            <div className="mb-1.5 flex items-center gap-2 rounded-lg border-l-2 border-[var(--accent)] bg-[var(--surface-2)] px-2.5 py-1.5 text-xs">
+              <IconReply className="h-4 w-4 shrink-0 text-[var(--text-dim)]" />
+              <span className="min-w-0 flex-1 truncate">
+                Reponse a <span className="font-semibold">{replyTo.author.fullName}</span> :{' '}
+                <span className="text-[var(--text-dim)]">{replyTo.body || 'piece jointe'}</span>
+              </span>
+              <button
+                className="grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--text-dim)] hover:text-[var(--text)]"
+                onClick={() => setReplyTo(null)}
+                title="Annuler"
+              >
+                <IconClose className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
+
+          {uploadError && <div className="mb-1.5 px-1 text-xs text-red-600">{uploadError}</div>}
+          {(pending.length > 0 || uploading) && (
+            <div className="mb-1.5 flex flex-wrap items-center gap-2">
+              {pending.map((a, i) => (
+                <span
+                  key={i}
+                  className="flex items-center gap-1.5 rounded-lg border border-[var(--outline)] bg-[var(--surface)] py-1 pl-2 pr-1 text-xs"
+                >
+                  <IconFile className="h-4 w-4 shrink-0 text-[var(--text-dim)]" />
+                  <span className="max-w-[160px] truncate">{a.name}</span>
+                  <span className="text-2xs text-[var(--text-dim)]">{fmtSize(a.size)}</span>
+                  <button
+                    type="button"
+                    className="grid h-5 w-5 place-items-center rounded text-[var(--text-dim)] hover:text-red-500"
+                    onClick={() => setPending((p) => p.filter((_, j) => j !== i))}
+                    title="Retirer"
+                  >
+                    <IconClose className="h-3.5 w-3.5" />
+                  </button>
+                </span>
+              ))}
+              {uploading && <span className="text-xs text-[var(--text-dim)]">Envoi du fichier…</span>}
+            </div>
+          )}
+          <div className="flex items-end gap-1.5 rounded-2xl border border-[var(--outline)] bg-[var(--surface)] p-2 focus-within:border-[var(--accent)] focus-within:ring-4 focus-within:ring-[var(--accent-soft)]">
+            <input
+              ref={fileRef}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={(e) => uploadFiles(e.target.files)}
+            />
+            <button
+              type="button"
+              className="icon-btn shrink-0"
+              title="Joindre un fichier (2 Mo max)"
+              disabled={uploading || !activeId}
+              onClick={() => fileRef.current?.click()}
+            >
+              <IconAttach className="h-5 w-5" />
+            </button>
             <textarea
               ref={taRef}
               rows={1}
-              className="max-h-40 flex-1 resize-none bg-transparent px-2 py-1.5 text-[14px] outline-none placeholder:text-[var(--text-dim)]"
+              className="max-h-40 flex-1 resize-none bg-transparent px-1 py-1.5 text-base outline-none placeholder:text-[var(--text-dim)]"
               placeholder={`Message ${activeChannel ? '#' + channelTitle(activeChannel) : ''}`}
               value={draft}
-              onChange={(e) => setDraft(e.target.value)}
+              onChange={(e) => onDraftChange(e.target.value, e.target.selectionStart ?? e.target.value.length)}
               onKeyDown={onComposerKey}
             />
             <button
               onClick={send}
-              disabled={!draft.trim()}
+              disabled={(!draft.trim() && pending.length === 0) || uploading}
               className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[var(--accent)] text-white transition hover:brightness-110 disabled:opacity-30"
               title="Envoyer"
             >
@@ -471,7 +932,7 @@ export default function Chat() {
 function SectionHeader({ label, onAdd }: { label: string; onAdd: () => void }) {
   return (
     <div className="flex items-center justify-between px-2 pb-1 pt-2">
-      <span className="text-[11px] font-bold uppercase tracking-wide text-[var(--text-dim)]">{label}</span>
+      <span className="text-2xs font-bold uppercase tracking-wide text-[var(--text-dim)]">{label}</span>
       <button onClick={onAdd} className="icon-btn-sm" aria-label={`Ajouter ${label}`}>
         <IconAdd className="h-4 w-4" />
       </button>
@@ -485,29 +946,39 @@ function ConvItem({
   icon,
   label,
   call,
+  unread = 0,
 }: {
   active: boolean;
   onClick: () => void;
   icon: ReactNode;
   label: string;
   call?: ActiveCall;
+  unread?: number;
 }) {
+  const hasUnread = unread > 0 && !active;
   return (
     <li>
       <button
         onClick={onClick}
         className={clsx(
-          'flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] transition',
+          'group flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-base transition',
           active
             ? 'accent-active font-semibold'
-            : 'text-[var(--text-dim)] hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/5',
+            : hasUnread
+              ? 'font-semibold text-[var(--text)] hover:bg-black/5 dark:hover:bg-white/5'
+              : 'text-[var(--text-dim)] hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/5',
         )}
       >
         {icon}
-        <span className="min-w-0 flex-1 truncate">{label}</span>
+        <span className="min-w-0 flex-1 truncate item-title">{label}</span>
+        {hasUnread && (
+          <span className="ml-auto grid h-5 min-w-[20px] shrink-0 place-items-center rounded-full bg-[var(--accent)] px-1.5 text-2xs font-bold text-white">
+            {unread > 99 ? '99+' : unread}
+          </span>
+        )}
         {call && (
           <span
-            className="flex shrink-0 items-center gap-1 rounded-full bg-brand-500/15 px-1.5 py-0.5 text-[11px] font-semibold text-brand-700 dark:text-brand-300"
+            className="flex shrink-0 items-center gap-1 rounded-full bg-[var(--accent-soft)] px-1.5 py-0.5 text-2xs font-semibold text-brand-700 dark:text-brand-300"
             title={`${call.type === 'VIDEO' ? 'Visio' : 'Appel'} en cours · ${call.participants} participant(s)`}
           >
             {call.type === 'VIDEO' ? (
@@ -523,6 +994,232 @@ function ConvItem({
   );
 }
 
+function ShareModal({
+  message,
+  channels,
+  currentUserId,
+  onClose,
+  onShared,
+}: {
+  message: Message | null;
+  channels: Channel[];
+  currentUserId?: string;
+  onClose: () => void;
+  onShared: () => void;
+}) {
+  const [q, setQ] = useState('');
+  const [sentTo, setSentTo] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const chanName = (c: Channel) =>
+    c.type !== 'DIRECT'
+      ? `# ${c.name ?? 'salon'}`
+      : (c.members ?? [])
+          .filter((m) => m.userId !== currentUserId)
+          .map((m) => m.user.fullName.split(' ')[0])
+          .join(', ') || 'Message direct';
+
+  const list = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    return channels
+      .filter((c) => c.id !== message?.channelId)
+      .filter((c) => !s || chanName(c).toLowerCase().includes(s));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channels, q, message]);
+
+  async function shareTo(c: Channel) {
+    if (!message || busy) return;
+    setBusy(true);
+    try {
+      await api.post('/messages', {
+        channelId: c.id,
+        body: message.body,
+        forwardedFrom: message.forwardedFrom || message.author.fullName,
+        attachments: (message.attachments ?? []).map(({ url, name, mimeType, size }) => ({
+          url,
+          name,
+          mimeType,
+          size,
+        })),
+      });
+      setSentTo(c.id);
+      onShared();
+      setTimeout(() => {
+        setSentTo(null);
+        onClose();
+      }, 700);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal open={!!message} onClose={onClose} title="Partager le message">
+      <div className="mb-3 rounded-lg border-l-2 border-[var(--accent)] bg-[var(--surface-2)] px-3 py-2 text-sm">
+        <span className="font-semibold" style={{ color: avColor(message?.author.id ?? '') }}>
+          {message?.author.fullName}
+        </span>
+        <p className="mt-0.5 line-clamp-3 whitespace-pre-wrap text-[var(--text-dim)]">
+          {message?.body || 'piece jointe'}
+        </p>
+      </div>
+      <div className="relative mb-2">
+        <IconSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-dim)]" />
+        <input
+          autoFocus
+          className="input pl-9"
+          placeholder="Rechercher un canal…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+        />
+      </div>
+      <ul className="max-h-72 space-y-0.5 overflow-y-auto">
+        {list.map((c) => (
+          <li key={c.id}>
+            <button
+              disabled={busy}
+              onClick={() => shareTo(c)}
+              className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm transition hover:bg-[var(--surface-2)] disabled:opacity-50"
+            >
+              {c.type !== 'DIRECT' ? (
+                <span
+                  className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-white"
+                  style={{ background: c.color ?? avColor(c.id) }}
+                >
+                  <IconHash className="h-3.5 w-3.5" />
+                </span>
+              ) : (
+                <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[var(--surface-2)] text-[var(--text-dim)]">
+                  <IconGroups className="h-3.5 w-3.5" />
+                </span>
+              )}
+              <span className="min-w-0 flex-1 truncate">{chanName(c)}</span>
+              {sentTo === c.id ? (
+                <IconTick className="h-4 w-4 shrink-0 text-[var(--accent)]" />
+              ) : (
+                <IconShare className="h-4 w-4 shrink-0 text-[var(--text-dim)]" />
+              )}
+            </button>
+          </li>
+        ))}
+        {list.length === 0 && (
+          <li className="py-3 text-center text-sm text-[var(--text-dim)]">Aucun canal</li>
+        )}
+      </ul>
+    </Modal>
+  );
+}
+
+function fmtSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} o`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} Ko`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} Mo`;
+}
+
+function AttachmentView({ a }: { a: Attachment }) {
+  if (a.mimeType.startsWith('image/')) {
+    return (
+      <a href={a.url} target="_blank" rel="noreferrer" className="block">
+        <img
+          src={a.url}
+          alt={a.name}
+          className="max-h-64 max-w-[280px] rounded-xl border border-[var(--outline)] object-cover"
+        />
+      </a>
+    );
+  }
+  return (
+    <a
+      href={a.url}
+      target="_blank"
+      rel="noreferrer"
+      download={a.name}
+      className="flex items-center gap-2 rounded-xl border border-[var(--outline)] bg-[var(--surface)] px-3 py-2 text-sm transition hover:bg-[var(--surface-2)]"
+    >
+      <IconFile className="h-5 w-5 shrink-0 text-[var(--text-dim)]" />
+      <span className="min-w-0">
+        <span className="block max-w-[220px] truncate font-medium">{a.name}</span>
+        <span className="block text-2xs text-[var(--text-dim)]">{fmtSize(a.size)}</span>
+      </span>
+    </a>
+  );
+}
+
+function fmtDuration(from: string, to: string) {
+  const s = Math.max(0, Math.round((new Date(to).getTime() - new Date(from).getTime()) / 1000));
+  const m = Math.floor(s / 60);
+  return m > 0 ? `${m} min` : `${s} s`;
+}
+
+function CallEvent({
+  m,
+  mine,
+  live,
+  onJoin,
+}: {
+  m: Message;
+  mine: boolean;
+  live: boolean;
+  onJoin: () => void;
+}) {
+  const c = m.call;
+  const isVideo = c?.type === 'VIDEO';
+  const missed = c?.status === 'MISSED';
+  const label = live
+    ? isVideo
+      ? 'Visio en cours'
+      : 'Appel en cours'
+    : missed
+      ? isVideo
+        ? 'Visio manquee'
+        : 'Appel manque'
+      : isVideo
+        ? 'Visio terminee'
+        : 'Appel termine';
+  const dur = c && !live && !missed && c.endedAt ? ` · ${fmtDuration(c.startedAt, c.endedAt)}` : '';
+  const time = new Date(m.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+
+  return (
+    <div className="flex justify-center">
+      <div
+        className={clsx(
+          'flex max-w-full flex-wrap items-center gap-2.5 rounded-2xl border px-3 py-1.5 text-sm',
+          live
+            ? 'border-[var(--accent)] bg-[var(--accent-soft)]'
+            : missed
+              ? 'border-red-300 text-red-600 dark:border-red-500/40'
+              : 'border-[var(--outline)] bg-[var(--surface)]',
+        )}
+      >
+        <span
+          className={clsx(
+            'grid h-7 w-7 shrink-0 place-items-center rounded-full',
+            live
+              ? 'bg-[var(--accent)] text-white'
+              : missed
+                ? 'bg-red-100 text-red-600 dark:bg-red-500/15'
+                : 'bg-[var(--surface-2)] text-[var(--text-dim)]',
+          )}
+        >
+          {isVideo ? <IconVideo className="h-4 w-4" /> : <IconCall className="h-4 w-4" />}
+        </span>
+        <span className="min-w-0">
+          <span className="font-medium">{label}</span>
+          {dur}
+          <span className="ml-1.5 text-2xs text-[var(--text-dim)]">
+            {mine ? 'Vous' : m.author.fullName} · {time}
+          </span>
+        </span>
+        {live && (
+          <button onClick={onJoin} className="btn-primary btn-sm ml-1 shrink-0">
+            {isVideo ? <IconVideo className="h-4 w-4" /> : <IconCall className="h-4 w-4" />} Rejoindre
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function groupMessages(msgs: Message[]) {
   const groups: { author: Message['author']; items: Message[] }[] = [];
   for (const m of msgs) {
@@ -530,6 +1227,8 @@ function groupMessages(msgs: Message[]) {
     const prev = last?.items[last.items.length - 1];
     if (
       last &&
+      m.kind !== 'CALL' &&
+      prev?.kind !== 'CALL' &&
       last.author.id === m.author.id &&
       prev &&
       new Date(m.createdAt).getTime() - new Date(prev.createdAt).getTime() < 5 * 60_000

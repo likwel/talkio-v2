@@ -6,7 +6,7 @@ import { api } from '@/lib/api';
 import { useWorkspace } from '@/context/WorkspaceContext';
 import { useProfile } from '@/context/ProfileContext';
 import type { Channel, WorkspaceDetail } from '@/lib/types';
-import { IconAdd, IconClose } from '@/lib/icons';
+import { IconAdd, IconClose, IconSearch } from '@/lib/icons';
 
 const AV = ['#0cae36', '#2563eb', '#d946ef', '#f59e0b', '#ef4444', '#14b8a6', '#8b5cf6', '#ec4899'];
 const tint = (id: string) => {
@@ -33,6 +33,7 @@ export default function ChannelSettingsModal({
   const [topic, setTopic] = useState('');
   const [color, setColor] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [q, setQ] = useState('');
 
   useEffect(() => {
     if (channel) {
@@ -71,7 +72,6 @@ export default function ChannelSettingsModal({
   async function addMembers(ids: string[]) {
     if (!channel || ids.length === 0) return;
     await api.post(`/channels/${channel.id}/members`, { userIds: ids });
-    setAddOpen(false);
     detail.refetch();
     onChanged();
   }
@@ -127,28 +127,50 @@ export default function ChannelSettingsModal({
           </div>
 
           {addOpen && (
-            <div className="mb-2 max-h-40 overflow-y-auto rounded-lg border border-[var(--outline)]">
-              {wsDetail.isLoading && <div className="p-2 text-xs text-[var(--text-dim)]">Chargement…</div>}
-              {wsDetail.data?.members
-                .filter((m) => !memberIds.has(m.user.id))
-                .map((m) => (
-                  <button
-                    key={m.user.id}
-                    onClick={() => addMembers([m.user.id])}
-                    className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[13px] hover:bg-[var(--surface-2)]"
-                  >
-                    <span
-                      className="grid h-6 w-6 place-items-center rounded-full text-[10px] font-bold text-white"
-                      style={{ background: tint(m.user.id) }}
+            <div className="mb-2 rounded-lg border border-[var(--outline)]">
+              <div className="relative border-b border-[var(--outline)] p-1.5">
+                <IconSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-dim)]" />
+                <input
+                  autoFocus
+                  className="h-8 w-full rounded-md bg-[var(--surface-2)] pl-8 pr-2 text-sm outline-none placeholder:text-[var(--text-dim)]"
+                  placeholder="Rechercher une personne…"
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                />
+              </div>
+              <div className="max-h-44 overflow-y-auto">
+                {wsDetail.isLoading && <div className="p-2 text-xs text-[var(--text-dim)]">Chargement…</div>}
+                {(() => {
+                  const avail = (wsDetail.data?.members ?? [])
+                    .filter((m) => !memberIds.has(m.user.id))
+                    .filter((m) => m.user.fullName.toLowerCase().includes(q.trim().toLowerCase()));
+                  if (wsDetail.data && avail.length === 0)
+                    return (
+                      <div className="p-2 text-xs text-[var(--text-dim)]">
+                        {q ? 'Aucun resultat' : "Tous les membres de l'espace sont deja la"}
+                      </div>
+                    );
+                  return avail.map((m) => (
+                    <button
+                      key={m.user.id}
+                      onClick={() => {
+                        addMembers([m.user.id]);
+                        setQ('');
+                      }}
+                      className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-sm hover:bg-[var(--surface-2)]"
                     >
-                      {initials(m.user.fullName)}
-                    </span>
-                    {m.user.fullName}
-                  </button>
-                ))}
-              {wsDetail.data && wsDetail.data.members.filter((m) => !memberIds.has(m.user.id)).length === 0 && (
-                <div className="p-2 text-xs text-[var(--text-dim)]">Tous les membres de l'espace sont deja la</div>
-              )}
+                      <span
+                        className="grid h-6 w-6 place-items-center rounded-full text-2xs font-bold text-white"
+                        style={{ background: tint(m.user.id) }}
+                      >
+                        {initials(m.user.fullName)}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate">{m.user.fullName}</span>
+                      <IconAdd className="h-4 w-4 shrink-0 text-[var(--text-dim)]" />
+                    </button>
+                  ));
+                })()}
+              </div>
             </div>
           )}
 
@@ -160,7 +182,7 @@ export default function ChannelSettingsModal({
                   className="flex min-w-0 flex-1 items-center gap-2 text-left"
                 >
                   <span
-                    className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-[10px] font-bold text-white"
+                    className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-2xs font-bold text-white"
                     style={{ background: tint(m.userId) }}
                   >
                     {initials(m.user.fullName)}

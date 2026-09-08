@@ -1,8 +1,11 @@
+export type PresenceStatus = 'ONLINE' | 'AWAY' | 'BUSY' | 'INVISIBLE';
+
 export interface User {
   id: string;
   email: string;
   fullName: string;
   avatarUrl?: string | null;
+  presenceStatus?: PresenceStatus;
 }
 
 export interface Workspace {
@@ -11,6 +14,8 @@ export interface Workspace {
   slug: string;
   color?: string | null;
   _count?: { members: number; channels: number; boards: number };
+  /** Messages non lus cumules sur l'espace (badge du rail). */
+  unreadCount?: number;
 }
 
 export interface Channel {
@@ -21,7 +26,17 @@ export interface Channel {
   color?: string | null;
   type: 'PUBLIC' | 'PRIVATE' | 'DIRECT';
   _count?: { messages: number; members: number };
-  members?: { userId: string; user: Pick<User, 'id' | 'fullName' | 'avatarUrl'> }[];
+  members?: { userId: string; user: Pick<User, 'id' | 'fullName' | 'avatarUrl' | 'presenceStatus'> }[];
+  /** Messages non lus (base sur ChannelMember.lastReadAt cote serveur). */
+  unreadCount?: number;
+}
+
+export interface Attachment {
+  id: string;
+  url: string;
+  name: string;
+  mimeType: string;
+  size: number;
 }
 
 export interface WorkspaceDetail extends Workspace {
@@ -58,7 +73,22 @@ export interface Message {
   body: string;
   createdAt: string;
   editedAt?: string | null;
-  author: Pick<User, 'id' | 'fullName' | 'avatarUrl'>;
+  author: Pick<User, 'id' | 'fullName' | 'avatarUrl' | 'presenceStatus'>;
+  attachments?: Attachment[];
+  kind?: 'TEXT' | 'CALL';
+  /** Details de l'appel pour un message `kind: 'CALL'`. */
+  call?: {
+    roomId: string;
+    type: 'AUDIO' | 'VIDEO';
+    status: 'RINGING' | 'ONGOING' | 'ENDED' | 'MISSED';
+    startedAt: string;
+    endedAt?: string | null;
+  } | null;
+  parentId?: string | null;
+  /** Message cite (fonction « Repondre »). */
+  parent?: { id: string; body: string; author: { id: string; fullName: string } } | null;
+  /** Nom de l'auteur d'origine si le message a ete transfere. */
+  forwardedFrom?: string | null;
   _count?: { replies: number };
 }
 

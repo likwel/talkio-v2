@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import type { FormDef, FormResponse } from '@/lib/types';
 import { IconBack, IconDownload } from '@/lib/icons';
+import Pagination, { usePagination } from '@/components/Pagination';
 
 async function downloadCsv(formId: string, title: string) {
   const res = await api.get(`/forms/${formId}/export.csv`, { responseType: 'blob' });
@@ -58,18 +59,21 @@ export default function FormResponses() {
     return out;
   }, [fields, responses.data]);
 
+  const rows = responses.data ?? [];
+  const pg = usePagination(rows, 25, formId);
+
   if (form.isLoading) return <div className="p-6 text-[var(--text-dim)]">Chargement…</div>;
 
   return (
-    <div className="space-y-4 p-4 sm:p-6">
+    <div className="page space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         <Link to="/forms" className="icon-btn" aria-label="Retour">
           <IconBack className="h-5 w-5" />
         </Link>
-        <h1 className="text-lg font-normal sm:text-[22px]">{form.data?.title}</h1>
+        <h1 className="page-title truncate">{form.data?.title}</h1>
         <span className="chip">{responses.data?.length ?? 0} reponse(s)</span>
         <button
-          className="btn-tonal ml-auto h-9"
+          className="btn-tonal ml-auto"
           onClick={() => form.data && downloadCsv(form.data.id, form.data.title)}
         >
           <IconDownload className="h-4 w-4" /> Export CSV
@@ -77,7 +81,7 @@ export default function FormResponses() {
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-[var(--outline)]">
-        <table className="w-full text-sm">
+        <table className="w-full min-w-[640px] text-sm">
           <thead className="bg-[var(--surface-2)] text-left text-xs text-[var(--text-dim)]">
             <tr>
               <th className="whitespace-nowrap px-3 py-2 font-semibold">Date</th>
@@ -91,7 +95,7 @@ export default function FormResponses() {
             </tr>
           </thead>
           <tbody>
-            {responses.data?.map((r) => (
+            {pg.slice.map((r) => (
               <tr key={r.id} className="border-t border-[var(--outline)]">
                 <td className="whitespace-nowrap px-3 py-2 text-[var(--text-dim)]">
                   {new Date(r.submittedAt).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}
@@ -104,7 +108,7 @@ export default function FormResponses() {
                 ))}
               </tr>
             ))}
-            {responses.data?.length === 0 && (
+            {rows.length === 0 && (
               <tr>
                 <td colSpan={fields.length + 2} className="px-3 py-8 text-center text-[var(--text-dim)]">
                   Aucune reponse pour le moment.
@@ -114,6 +118,15 @@ export default function FormResponses() {
           </tbody>
         </table>
       </div>
+
+      <Pagination
+        page={pg.page}
+        pageCount={pg.pageCount}
+        onChange={pg.setPage}
+        total={pg.total}
+        start={pg.start}
+        end={pg.end}
+      />
     </div>
   );
 }

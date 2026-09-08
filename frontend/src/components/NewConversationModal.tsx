@@ -133,7 +133,7 @@ export default function NewConversationModal({
                 onClick={() => toggle(m.id)}
                 className={clsx(
                   'flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition',
-                  on ? 'bg-brand-500/10' : 'hover:bg-black/5 dark:hover:bg-white/5',
+                  on ? 'bg-[var(--accent-soft)]' : 'hover:bg-black/5 dark:hover:bg-white/5',
                 )}
               >
                 <span

@@ -1,11 +1,36 @@
 import { Router } from 'express';
+import { z } from 'zod';
 import { asyncHandler } from '../../lib/asyncHandler';
+import { validate } from '../../middleware/validate';
 import { prisma } from '../../lib/prisma';
 import { notFound } from '../../lib/http';
+import { getIO } from '../../realtime/socket';
 
 const router = Router();
 
-const publicUser = { id: true, fullName: true, email: true, avatarUrl: true, createdAt: true } as const;
+const publicUser = {
+  id: true,
+  fullName: true,
+  email: true,
+  avatarUrl: true,
+  presenceStatus: true,
+  createdAt: true,
+} as const;
+
+/** Statut de presence choisi par l'utilisateur (En ligne / Absent / Occupe / Invisible). */
+router.patch(
+  '/me/status',
+  validate(z.object({ status: z.enum(['ONLINE', 'AWAY', 'BUSY', 'INVISIBLE']) })),
+  asyncHandler(async (req, res) => {
+    const user = await prisma.user.update({
+      where: { id: req.user!.id },
+      data: { presenceStatus: req.body.status },
+      select: { id: true, presenceStatus: true },
+    });
+    getIO()?.emit('presence:changed', { userId: user.id, status: user.presenceStatus });
+    res.json(user);
+  }),
+);
 
 /** Profil public d'une personne + relation d'amitie avec l'utilisateur courant. */
 router.get(

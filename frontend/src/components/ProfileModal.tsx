@@ -4,8 +4,12 @@ import Modal from '@/components/Modal';
 import { api } from '@/lib/api';
 import { getSocket } from '@/lib/socket';
 import { useWorkspace } from '@/context/WorkspaceContext';
+import { useSettings } from '@/context/SettingsContext';
+import { usePresence, DOT_LABEL } from '@/context/PresenceContext';
+import PresenceDot from '@/components/PresenceDot';
+import StatusPicker from '@/components/StatusPicker';
 import type { Channel, UserProfile } from '@/lib/types';
-import { IconPersonAdd, IconChat, IconTick, IconClose } from '@/lib/icons';
+import { IconPersonAdd, IconChat, IconTick, IconClose, IconEdit } from '@/lib/icons';
 
 const AV = ['#0cae36', '#2563eb', '#d946ef', '#f59e0b', '#ef4444', '#14b8a6', '#8b5cf6', '#ec4899'];
 const tint = (id: string) => {
@@ -17,6 +21,8 @@ const initials = (n: string) => n.split(/\s+/).slice(0, 2).map((p) => p[0]?.toUp
 
 export default function ProfileModal({ userId, onClose }: { userId: string | null; onClose: () => void }) {
   const { current } = useWorkspace();
+  const { openSettings } = useSettings();
+  const { presenceOf } = usePresence();
   const navigate = useNavigate();
   const [p, setP] = useState<UserProfile | null>(null);
   const [busy, setBusy] = useState(false);
@@ -77,15 +83,35 @@ export default function ProfileModal({ userId, onClose }: { userId: string | nul
         <div className="py-8 text-center text-sm text-[var(--text-dim)]">Chargement…</div>
       ) : (
         <div className="space-y-4">
+          {p.friendState === 'self' && (
+            <div className="rounded-xl border border-[var(--outline)] bg-[var(--surface-2)] p-3">
+              <StatusPicker />
+            </div>
+          )}
+
           <div className="flex items-center gap-3">
-            <span
-              className="grid h-16 w-16 shrink-0 place-items-center rounded-full text-xl font-bold text-white"
-              style={{ background: tint(p.id) }}
-            >
-              {initials(p.fullName)}
+            <span className="relative shrink-0">
+              <span
+                className="grid h-16 w-16 place-items-center rounded-full text-xl font-bold text-white"
+                style={{ background: tint(p.id) }}
+              >
+                {initials(p.fullName)}
+              </span>
+              {p.friendState !== 'self' && (
+                <PresenceDot
+                  state={presenceOf(p.id, p.presenceStatus)}
+                  size={16}
+                  className="absolute bottom-0.5 right-0.5"
+                />
+              )}
             </span>
             <div className="min-w-0">
               <div className="truncate text-lg font-bold">{p.fullName}</div>
+              {p.friendState !== 'self' && (
+                <div className="text-xs font-medium text-[var(--text-dim)]">
+                  {DOT_LABEL[presenceOf(p.id, p.presenceStatus)]}
+                </div>
+              )}
               <div className="truncate text-sm text-[var(--text-dim)]">{p.email}</div>
               <div className="text-xs text-[var(--text-dim)]">
                 Membre depuis {new Date(p.createdAt).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}
@@ -95,7 +121,7 @@ export default function ProfileModal({ userId, onClose }: { userId: string | nul
 
           {p.sharedWorkspaces.length > 0 && (
             <div>
-              <div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-[var(--text-dim)]">
+              <div className="mb-1 text-2xs font-bold uppercase tracking-wide text-[var(--text-dim)]">
                 Espaces en commun
               </div>
               <div className="flex flex-wrap gap-1.5">
@@ -105,6 +131,20 @@ export default function ProfileModal({ userId, onClose }: { userId: string | nul
                   </span>
                 ))}
               </div>
+            </div>
+          )}
+
+          {p.friendState === 'self' && (
+            <div className="pt-1">
+              <button
+                className="btn-outlined w-full"
+                onClick={() => {
+                  onClose();
+                  openSettings('profil');
+                }}
+              >
+                <IconEdit className="h-4 w-4" /> Modifier mon profil
+              </button>
             </div>
           )}
 

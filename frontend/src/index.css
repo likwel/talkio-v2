@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 /* ------------------------------------------------------------------ *
- *  Talkio - interface moderne (Inter, neutres doux, accent vert)
+ *  Talkio - interface moderne (Inter, neutres doux, accent bleu)
  * ------------------------------------------------------------------ */
 
 :root {
@@ -14,11 +14,20 @@
   --text: #16181c;
   --text-dim: #5b6572;
   --outline: #e6e8ec;
-  --accent: #0cae36;
-  --accent-soft: rgba(12, 174, 54, 0.13);
-  --accent-softer: rgba(12, 174, 54, 0.08);
-  --accent-strong: #0a8b2b;
-  --accent-ring: rgba(12, 174, 54, 0.22);
+  --accent: #3390ec;
+  --accent-soft: rgba(51, 144, 236, 0.13);
+  --accent-softer: rgba(51, 144, 236, 0.08);
+  --accent-strong: #2b7cd4;
+  --accent-ring: rgba(51, 144, 236, 0.28);
+
+  /* Messagerie (style Telegram) */
+  --chat-bg: #e5ebf1;
+  --msg-in-bg: #ffffff;
+  --msg-in-text: var(--text);
+  --msg-out-bg: var(--accent);
+  --msg-out-text: #ffffff;
+  --msg-meta: rgba(91, 101, 114, 0.9);
+  --msg-meta-on: rgba(255, 255, 255, 0.85);
 }
 :root.dark {
   --bg: #0b0c0e;
@@ -28,6 +37,14 @@
   --text: #e9eaec;
   --text-dim: #9aa3af;
   --outline: #262a30;
+
+  --chat-bg: #0e1621;
+  --msg-in-bg: #1b2733;
+  --msg-in-text: var(--text);
+  --msg-out-bg: #2b5278;
+  --msg-out-text: #e9eef5;
+  --msg-meta: rgba(154, 163, 175, 0.9);
+  --msg-meta-on: rgba(233, 238, 245, 0.7);
 }
 
 * {
@@ -49,14 +66,52 @@ body {
   @apply font-sans antialiased;
   background: var(--bg);
   color: var(--text);
+  font-size: 15px;
+  line-height: 1.55;
   font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
 }
 
 @layer components {
-  /* --- Boutons pilule --- */
+  /* --- Mise en page --- */
+  .page {
+    @apply mx-auto w-full p-4 sm:p-6;
+  }
+  .page-title {
+    @apply flex items-center gap-2 font-display text-xl font-bold tracking-tight text-[var(--text)] sm:text-2xl;
+  }
+  .section-title {
+    @apply font-display text-md font-bold text-[var(--text)];
+  }
+  .field-label {
+    @apply mb-1 block text-xs font-semibold text-[var(--text-dim)];
+  }
+  .meta {
+    @apply text-2xs text-[var(--text-dim)];
+  }
+  /* Titre d'un element cliquable : passe en accent quand on survole l'element
+     parent marque `.group` (cartes, lignes de liste, items de navigation). */
+  .item-title {
+    @apply transition-colors duration-150;
+  }
+  .group:hover .item-title {
+    color: var(--accent-strong);
+  }
+  .safe-b {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .safe-t {
+    padding-top: env(safe-area-inset-top);
+  }
+
+  /* --- Boutons pilule ---------------------------------------------------- *
+   *  Un seul systeme : `.btn-{primary|tonal|outlined|text|danger}`
+   *  + modificateurs de taille `.btn-sm` / `.btn-lg` (a placer APRES la variante).
+   *  Icone seule : `.icon-btn` / `.icon-btn-sm`. Ne plus composer de bouton a la main.
+   * --------------------------------------------------------------------- */
   .btn {
-    @apply inline-flex h-9 select-none items-center justify-center gap-2 rounded-full px-4
-           text-[13px] font-semibold tracking-[-0.01em] transition
+    @apply inline-flex h-9 select-none items-center justify-center gap-2 whitespace-nowrap rounded-full px-4
+           text-sm font-semibold tracking-[-0.01em] transition
+           focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[var(--accent-soft)]
            disabled:pointer-events-none disabled:opacity-40;
   }
   .btn-primary {
@@ -74,26 +129,31 @@ body {
   .btn-text {
     @apply btn px-3 text-[var(--text-dim)] hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/5;
   }
+  .btn-danger {
+    @apply btn bg-red-600 text-white hover:bg-red-700 active:bg-red-800
+           focus-visible:ring-red-500/30;
+  }
+  /* Alias historique -> secondaire */
   .btn-ghost {
-    @apply btn border border-[var(--outline)] bg-[var(--surface)] text-[var(--text)]
-           hover:bg-[var(--surface-2)];
+    @apply btn-outlined;
+  }
+  /* Tailles (appliquer apres la variante : `btn-primary btn-sm`) */
+  .btn-sm {
+    @apply h-8 gap-1.5 px-3 text-xs;
+  }
+  .btn-lg {
+    @apply h-11 px-6 text-base;
   }
 
   /* --- Bouton icone --- */
   .icon-btn {
     @apply inline-grid h-9 w-9 place-items-center rounded-lg text-[var(--text-dim)] transition
-           hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/10;
+           hover:bg-black/5 hover:text-[var(--text)] disabled:pointer-events-none disabled:opacity-40
+           dark:hover:bg-white/10;
   }
   .icon-btn-sm {
     @apply inline-grid h-7 w-7 place-items-center rounded-md text-[var(--text-dim)] transition
            hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/10;
-  }
-
-  /* --- Bouton "Creer" --- */
-  .fab {
-    @apply inline-flex h-11 items-center gap-2 rounded-full bg-[var(--accent)] px-5 text-sm
-           font-semibold text-white shadow-[0_2px_10px_var(--accent-ring)] transition
-           hover:brightness-[1.06];
   }
 
   /* Etat actif teinte par l'accent (nav, listes, onglets) */
@@ -134,6 +194,52 @@ body {
   }
   .surface-2 {
     background: var(--surface-2);
+  }
+
+  /* --- Barre d'onglets mobile --- */
+  .bottom-nav {
+    @apply z-30 flex h-14 shrink-0 items-stretch border-t border-[var(--outline)]
+           bg-[var(--rail)] safe-b lg:hidden;
+  }
+  .bottom-nav-item {
+    @apply flex flex-1 flex-col items-center justify-center gap-0.5 text-2xs font-medium
+           text-[var(--text-dim)] transition;
+  }
+
+  /* --- Messagerie style Telegram --- */
+  .chat-bg {
+    background-color: var(--chat-bg);
+    background-image: radial-gradient(rgba(0, 0, 0, 0.035) 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+  :root.dark .chat-bg {
+    background-image: radial-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  }
+  .msg-bubble {
+    @apply relative w-fit max-w-full rounded-2xl px-3 py-1.5 text-base leading-snug
+           shadow-[0_1px_1px_rgba(0,0,0,0.08)];
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
+  .msg-in {
+    background: var(--msg-in-bg);
+    color: var(--msg-in-text);
+  }
+  .msg-out {
+    @apply ml-auto;
+    background: var(--msg-out-bg);
+    color: var(--msg-out-text);
+  }
+  .msg-time {
+    @apply pointer-events-none float-right ml-2 mt-1 select-none text-[10px] leading-none;
+    color: var(--msg-meta);
+  }
+  .msg-out .msg-time {
+    color: var(--msg-meta-on);
+  }
+  .date-chip {
+    @apply mx-auto my-3 w-fit rounded-full bg-black/10 px-3 py-1 text-2xs font-semibold
+           text-[var(--text-dim)] dark:bg-white/10;
   }
 }
 

@@ -16,7 +16,7 @@ export default function MiniMonth({ selected, onSelect }: Props) {
   return (
     <div className="select-none px-1">
       <div className="mb-1 flex items-center justify-between">
-        <span className="pl-1 text-sm font-medium capitalize text-slate-700 dark:text-slate-200">
+        <span className="pl-1 text-sm font-medium capitalize text-[var(--text)]">
           {fmtMonthYear(cursor)}
         </span>
         <div className="flex">
@@ -29,7 +29,7 @@ export default function MiniMonth({ selected, onSelect }: Props) {
         </div>
       </div>
 
-      <div className="grid grid-cols-7 text-center text-[10px] text-slate-400">
+      <div className="grid grid-cols-7 text-center text-2xs text-[var(--text-dim)]">
         {WEEK_LABELS.map((l, i) => (
           <span key={i} className="py-1">
             {l}
@@ -48,9 +48,9 @@ export default function MiniMonth({ selected, onSelect }: Props) {
               onClick={() => onSelect(d)}
               className={[
                 'mx-auto my-0.5 grid h-7 w-7 place-items-center rounded-full transition',
-                inMonth ? '' : 'text-slate-300 dark:text-slate-600',
+                inMonth ? '' : 'text-[var(--text-dim)] opacity-60',
                 sel
-                  ? 'bg-brand-600 font-medium text-white'
+                  ? 'bg-[var(--accent)] font-medium text-white'
                   : today
                     ? 'bg-brand-50 font-medium text-brand-700 dark:bg-brand-900/40 dark:text-brand-200'
                     : 'hover:bg-black/5 dark:hover:bg-white/10',

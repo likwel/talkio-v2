@@ -6,14 +6,33 @@ import { api } from '@/lib/api';
 import { getSocket } from '@/lib/socket';
 import Modal from '@/components/Modal';
 import ColorPicker from '@/components/ColorPicker';
+import Select from '@/components/Select';
+import Pagination, { usePagination } from '@/components/Pagination';
 import { useWorkspace } from '@/context/WorkspaceContext';
 import { useProfile } from '@/context/ProfileContext';
-import type { Board, BoardStatus, Card, WorkspaceDetail } from '@/lib/types';
+import { useDialog } from '@/context/DialogContext';
+import type { Board, BoardStatus, Card, User, WorkspaceDetail } from '@/lib/types';
 import { STATUS_LABEL, ProgressBar, tint, initials } from '@/pages/Boards';
-import { IconComment, IconBack, IconAdd, IconSettings, IconKanban, IconForms, IconClose } from '@/lib/icons';
+import {
+  IconComment,
+  IconBack,
+  IconAdd,
+  IconSettings,
+  IconKanban,
+  IconForms,
+  IconClose,
+  IconDelete,
+} from '@/lib/icons';
+
+const PRIORITY_LABEL: Record<string, string> = {
+  LOW: 'Basse',
+  MEDIUM: 'Moyenne',
+  HIGH: 'Haute',
+  URGENT: 'Urgente',
+};
 
 const PRIORITY_STYLE: Record<string, string> = {
-  LOW: 'bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-slate-300',
+  LOW: 'bg-[var(--surface-2)] text-[var(--text-dim)]',
   MEDIUM: 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300',
   HIGH: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300',
   URGENT: 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300',
@@ -27,6 +46,7 @@ export default function BoardDetail() {
   const [drag, setDrag] = useState<{ cardId: string } | null>(null);
   const [view, setView] = useState<'kanban' | 'list'>('kanban');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [openCard, setOpenCard] = useState<Card | null>(null);
 
   const board = useQuery({
     queryKey: ['board', boardId],
@@ -75,6 +95,7 @@ export default function BoardDetail() {
       (board.data?.columns ?? []).flatMap((c) => c.cards.map((card) => ({ ...card, columnName: c.name }))),
     [board.data],
   );
+  const cardsPg = usePagination(allCards, 25, `${boardId}|${view}`);
 
   if (board.isLoading) return <div className="p-6 text-[var(--text-dim)]">Chargement…</div>;
   if (!board.data) return <div className="p-6">Projet introuvable</div>;
@@ -85,25 +106,21 @@ export default function BoardDetail() {
       {/* --- En-tete projet --- */}
       <div className="space-y-2 border-b border-[var(--outline)] px-3 py-2.5 sm:px-4">
         <div className="flex flex-wrap items-center gap-2">
-          <Link to="/projects" className="icon-btn" aria-label="Retour">
+          <Link to="/projects" className="icon-btn shrink-0" aria-label="Retour">
             <IconBack className="h-5 w-5" />
           </Link>
-          {b.color && <span className="h-3 w-3 rounded-full" style={{ background: b.color }} />}
-          <h1 className="text-base font-semibold sm:text-lg">{b.name}</h1>
-          <select
-            className="input h-8 w-32 text-xs"
+          {b.color && <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: b.color }} />}
+          <h1 className="min-w-0 flex-1 truncate text-md font-bold sm:flex-none sm:text-lg">{b.name}</h1>
+          <Select
+            className="h-9 w-36 shrink-0"
+            aria-label="Statut du projet"
             value={b.status}
-            onChange={(e) => setStatus(e.target.value as BoardStatus)}
-          >
-            {(Object.keys(STATUS_LABEL) as BoardStatus[]).map((s) => (
-              <option key={s} value={s}>
-                {STATUS_LABEL[s]}
-              </option>
-            ))}
-          </select>
+            onChange={(v) => setStatus(v as BoardStatus)}
+            options={(Object.keys(STATUS_LABEL) as BoardStatus[]).map((s) => ({ value: s, label: STATUS_LABEL[s] }))}
+          />
 
-          <div className="ml-auto flex items-center gap-1">
-            <div className="mr-1 flex rounded-lg border border-[var(--outline)] p-0.5">
+          <div className="flex w-full items-center gap-1 sm:ml-auto sm:w-auto">
+            <div className="flex rounded-lg border border-[var(--outline)] p-0.5">
               <button
                 onClick={() => setView('kanban')}
                 className={clsx('flex h-7 items-center gap-1 rounded-md px-2 text-xs font-semibold', view === 'kanban' && 'accent-active')}
@@ -117,7 +134,7 @@ export default function BoardDetail() {
                 <IconForms className="h-4 w-4" /> Liste
               </button>
             </div>
-            <button className="icon-btn" title="Parametres du projet" onClick={() => setSettingsOpen(true)}>
+            <button className="icon-btn ml-auto sm:ml-0" title="Parametres du projet" onClick={() => setSettingsOpen(true)}>
               <IconSettings className="h-5 w-5" />
             </button>
           </div>
@@ -133,7 +150,7 @@ export default function BoardDetail() {
           {b.lead && (
             <span className="flex items-center gap-1">
               <span
-                className="grid h-5 w-5 place-items-center rounded-full text-[8px] font-bold text-white"
+                className="grid h-5 w-5 place-items-center rounded-full text-2xs font-bold text-white"
                 style={{ background: tint(b.lead.id) }}
               >
                 {initials(b.lead.fullName)}
@@ -149,7 +166,7 @@ export default function BoardDetail() {
                   <span
                     key={m.user.id}
                     title={m.user.fullName}
-                    className="grid h-5 w-5 place-items-center rounded-full text-[8px] font-bold text-white ring-2 ring-[var(--surface)]"
+                    className="grid h-5 w-5 place-items-center rounded-full text-2xs font-bold text-white ring-2 ring-[var(--surface)]"
                     style={{ background: tint(m.user.id) }}
                   >
                     {initials(m.user.fullName)}
@@ -186,6 +203,7 @@ export default function BoardDetail() {
                   <CardItem
                     key={card.id}
                     card={card}
+                    onOpen={() => setOpenCard(card)}
                     onDragStart={() => setDrag({ cardId: card.id })}
                     onDrop={(e) => onDrop(e, col.id, idx)}
                   />
@@ -206,7 +224,7 @@ export default function BoardDetail() {
       ) : (
         <div className="flex-1 overflow-auto p-4">
           <div className="overflow-x-auto rounded-xl border border-[var(--outline)]">
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[640px] text-sm">
               <thead className="bg-[var(--surface-2)] text-left text-xs text-[var(--text-dim)]">
                 <tr>
                   <th className="px-3 py-2 font-semibold">Tache</th>
@@ -217,12 +235,16 @@ export default function BoardDetail() {
                 </tr>
               </thead>
               <tbody>
-                {allCards.map((c) => (
-                  <tr key={c.id} className="border-t border-[var(--outline)]">
-                    <td className="px-3 py-2 font-medium">{c.title}</td>
+                {cardsPg.slice.map((c) => (
+                  <tr
+                    key={c.id}
+                    onClick={() => setOpenCard(c)}
+                    className="group cursor-pointer border-t border-[var(--outline)] transition hover:bg-[var(--surface-2)]"
+                  >
+                    <td className="px-3 py-2 font-medium item-title">{c.title}</td>
                     <td className="px-3 py-2 text-[var(--text-dim)]">{c.columnName}</td>
                     <td className="px-3 py-2">
-                      <span className={clsx('rounded-md px-1.5 py-0.5 text-[10px] font-semibold', PRIORITY_STYLE[c.priority])}>
+                      <span className={clsx('rounded-md px-1.5 py-0.5 text-2xs font-semibold', PRIORITY_STYLE[c.priority])}>
                         {c.priority}
                       </span>
                     </td>
@@ -235,7 +257,7 @@ export default function BoardDetail() {
                           <span
                             key={a.user.id}
                             title={a.user.fullName}
-                            className="grid h-6 w-6 place-items-center rounded-full text-[9px] font-bold text-white ring-2 ring-[var(--surface)]"
+                            className="grid h-6 w-6 place-items-center rounded-full text-2xs font-bold text-white ring-2 ring-[var(--surface)]"
                             style={{ background: tint(a.user.id) }}
                           >
                             {initials(a.user.fullName)}
@@ -255,10 +277,24 @@ export default function BoardDetail() {
               </tbody>
             </table>
           </div>
+          <Pagination
+            page={cardsPg.page}
+            pageCount={cardsPg.pageCount}
+            onChange={cardsPg.setPage}
+            total={cardsPg.total}
+            start={cardsPg.start}
+            end={cardsPg.end}
+          />
         </div>
       )}
 
       <BoardSettingsModal board={b} open={settingsOpen} onClose={() => setSettingsOpen(false)} onChanged={() => board.refetch()} />
+      <CardModal
+        card={openCard}
+        boardMembers={b.members ?? []}
+        onClose={() => setOpenCard(null)}
+        onChanged={() => board.refetch()}
+      />
     </div>
   );
 }
@@ -359,14 +395,14 @@ function BoardSettingsModal({
         </div>
         <label className="block">
           <span className="mb-1 block text-xs font-semibold text-[var(--text-dim)]">Chef de projet</span>
-          <select className="input" value={leadId} onChange={(e) => setLeadId(e.target.value)}>
-            <option value="">Aucun</option>
-            {wsDetail.data?.members.map((m) => (
-              <option key={m.user.id} value={m.user.id}>
-                {m.user.fullName}
-              </option>
-            ))}
-          </select>
+          <Select
+            value={leadId}
+            onChange={setLeadId}
+            options={[
+              { value: '', label: 'Aucun' },
+              ...(wsDetail.data?.members ?? []).map((m) => ({ value: m.user.id, label: m.user.fullName })),
+            ]}
+          />
         </label>
         <div>
           <span className="mb-1.5 block text-xs font-semibold text-[var(--text-dim)]">Couleur</span>
@@ -382,7 +418,7 @@ function BoardSettingsModal({
               <li key={m.user.id} className="flex items-center gap-2 rounded-lg px-1.5 py-1 text-sm">
                 <button onClick={() => openProfile(m.user.id)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
                   <span
-                    className="grid h-7 w-7 place-items-center rounded-full text-[10px] font-bold text-white"
+                    className="grid h-7 w-7 place-items-center rounded-full text-2xs font-bold text-white"
                     style={{ background: tint(m.user.id) }}
                   >
                     {initials(m.user.fullName)}
@@ -402,7 +438,7 @@ function BoardSettingsModal({
                 <button
                   key={m.user.id}
                   onClick={() => addMember(m.user.id)}
-                  className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[13px] hover:bg-[var(--surface-2)]"
+                  className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-sm hover:bg-[var(--surface-2)]"
                 >
                   <IconAdd className="h-4 w-4 text-[var(--text-dim)]" /> {m.user.fullName}
                 </button>
@@ -416,10 +452,12 @@ function BoardSettingsModal({
 
 function CardItem({
   card,
+  onOpen,
   onDragStart,
   onDrop,
 }: {
   card: Card;
+  onOpen: () => void;
   onDragStart: () => void;
   onDrop: (e: DragEvent) => void;
 }) {
@@ -429,21 +467,22 @@ function CardItem({
       onDragStart={onDragStart}
       onDragOver={(e) => e.preventDefault()}
       onDrop={onDrop}
-      className="cursor-grab rounded-xl bg-[var(--surface)] p-3 text-sm shadow-elevation-1 transition hover:shadow-elevation-2 active:cursor-grabbing"
+      onClick={onOpen}
+      className="group cursor-pointer rounded-xl bg-[var(--surface)] p-3 text-sm shadow-elevation-1 transition hover:shadow-elevation-2 active:cursor-grabbing"
     >
-      <div className="font-medium">{card.title}</div>
+      <div className="font-medium item-title">{card.title}</div>
       {card.description && <p className="mt-1 line-clamp-2 text-xs text-[var(--text-dim)]">{card.description}</p>}
       <div className="mt-2 flex flex-wrap items-center gap-2">
-        <span className={clsx('rounded-md px-1.5 py-0.5 text-[10px] font-semibold', PRIORITY_STYLE[card.priority])}>
+        <span className={clsx('rounded-md px-1.5 py-0.5 text-2xs font-semibold', PRIORITY_STYLE[card.priority])}>
           {card.priority}
         </span>
         {card.dueDate && (
-          <span className={clsx('text-[10px]', isOverdue(card.dueDate) ? 'font-semibold text-red-600' : 'text-[var(--text-dim)]')}>
+          <span className={clsx('text-2xs', isOverdue(card.dueDate) ? 'font-semibold text-red-600' : 'text-[var(--text-dim)]')}>
             {new Date(card.dueDate).toLocaleDateString('fr-FR')}
           </span>
         )}
         {!!card._count?.comments && (
-          <span className="flex items-center gap-0.5 text-[10px] text-[var(--text-dim)]">
+          <span className="flex items-center gap-0.5 text-2xs text-[var(--text-dim)]">
             <IconComment className="h-3.5 w-3.5" /> {card._count.comments}
           </span>
         )}
@@ -452,7 +491,7 @@ function CardItem({
             <span
               key={a.user.id}
               title={a.user.fullName}
-              className="grid h-5 w-5 place-items-center rounded-full text-[8px] font-bold text-white ring-2 ring-[var(--surface)]"
+              className="grid h-5 w-5 place-items-center rounded-full text-2xs font-bold text-white ring-2 ring-[var(--surface)]"
               style={{ background: tint(a.user.id) }}
             >
               {initials(a.user.fullName)}
@@ -469,10 +508,7 @@ function AddCard({ onAdd }: { onAdd: (title: string) => void }) {
   const [open, setOpen] = useState(false);
   if (!open)
     return (
-      <button
-        onClick={() => setOpen(true)}
-        className="mt-2 flex items-center gap-1.5 rounded-full px-3 py-2 text-left text-sm text-[var(--text-dim)] transition hover:bg-black/5 dark:hover:bg-white/5"
-      >
+      <button onClick={() => setOpen(true)} className="btn-text btn-sm mt-2 w-full justify-start">
         <IconAdd className="h-4 w-4" /> Ajouter une carte
       </button>
     );
@@ -495,11 +531,243 @@ function AddCard({ onAdd }: { onAdd: (title: string) => void }) {
         placeholder="Titre de la carte"
       />
       <div className="mt-2 flex gap-1">
-        <button className="btn-primary h-8 px-4 text-xs">Ajouter</button>
-        <button type="button" className="btn-text h-8 text-xs" onClick={() => setOpen(false)}>
+        <button className="btn-primary btn-sm">Ajouter</button>
+        <button type="button" className="btn-text btn-sm" onClick={() => setOpen(false)}>
           Annuler
         </button>
       </div>
     </form>
+  );
+}
+
+/** Fiche d'une tache : titre, description, priorite, echeance et assignation de personnes. */
+function CardModal({
+  card,
+  boardMembers,
+  onClose,
+  onChanged,
+}: {
+  card: Card | null;
+  boardMembers: { user: Pick<User, 'id' | 'fullName' | 'avatarUrl'> }[];
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const { current } = useWorkspace();
+  const { openProfile } = useProfile();
+  const dialog = useDialog();
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [priority, setPriority] = useState<Card['priority']>('MEDIUM');
+  const [dueDate, setDueDate] = useState('');
+  const [assignees, setAssignees] = useState<NonNullable<Card['assignees']>>([]);
+  const [saving, setSaving] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [q, setQ] = useState('');
+
+  useEffect(() => {
+    if (!card) return;
+    setTitle(card.title);
+    setDescription(card.description ?? '');
+    setPriority(card.priority);
+    setDueDate(card.dueDate ? card.dueDate.slice(0, 10) : '');
+    setAssignees(card.assignees ?? []);
+    setPickerOpen(false);
+    setQ('');
+  }, [card]);
+
+  const ws = useQuery({
+    queryKey: ['workspace', current?.id],
+    enabled: !!card && !!current,
+    queryFn: async () => (await api.get<WorkspaceDetail>(`/workspaces/${current!.id}`)).data,
+  });
+
+  const people = (ws.data?.members.map((m) => m.user) ?? boardMembers.map((m) => m.user)) as Pick<
+    User,
+    'id' | 'fullName' | 'avatarUrl'
+  >[];
+  const assignedIds = new Set(assignees.map((a) => a.user.id));
+
+  async function toggleAssignee(u: Pick<User, 'id' | 'fullName' | 'avatarUrl'>) {
+    if (!card) return;
+    if (assignedIds.has(u.id)) {
+      setAssignees((a) => a.filter((x) => x.user.id !== u.id));
+      await api.delete(`/boards/cards/${card.id}/assignees/${u.id}`);
+    } else {
+      setAssignees((a) => [...a, { user: u }]);
+      await api.post(`/boards/cards/${card.id}/assignees`, { userId: u.id });
+    }
+    onChanged();
+  }
+
+  async function save() {
+    if (!card) return;
+    setSaving(true);
+    try {
+      await api.patch(`/boards/cards/${card.id}`, {
+        title: title.trim(),
+        description: description.trim() || null,
+        priority,
+        dueDate: dueDate || null,
+      });
+      onChanged();
+      onClose();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removeCard() {
+    if (!card) return;
+    const ok = await dialog.confirm({
+      title: 'Supprimer la tache',
+      message: `« ${card.title} » sera definitivement supprimee.`,
+      confirmLabel: 'Supprimer',
+      danger: true,
+    });
+    if (!ok) return;
+    await api.delete(`/boards/cards/${card.id}`);
+    onChanged();
+    onClose();
+  }
+
+  const filtered = people.filter(
+    (u) => !assignedIds.has(u.id) && u.fullName.toLowerCase().includes(q.trim().toLowerCase()),
+  );
+
+  return (
+    <Modal
+      open={!!card}
+      onClose={onClose}
+      title="Tache"
+      footer={
+        <>
+          <button className="btn-text btn-sm mr-auto text-red-600 hover:text-red-700" onClick={removeCard}>
+            <IconDelete className="h-4 w-4" /> Supprimer
+          </button>
+          <button className="btn-text" onClick={onClose}>
+            Fermer
+          </button>
+          <button className="btn-primary" onClick={save} disabled={saving || !title.trim()}>
+            {saving ? 'Enregistrement…' : 'Enregistrer'}
+          </button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <label className="block">
+          <span className="field-label">Titre</span>
+          <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} />
+        </label>
+        <label className="block">
+          <span className="field-label">Description</span>
+          <textarea
+            className="input"
+            rows={3}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
+        </label>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block">
+            <span className="field-label">Priorite</span>
+            <Select
+              value={priority}
+              onChange={(v) => setPriority(v as Card['priority'])}
+              options={(['LOW', 'MEDIUM', 'HIGH', 'URGENT'] as const).map((p) => ({
+                value: p,
+                label: PRIORITY_LABEL[p],
+              }))}
+            />
+          </label>
+          <label className="block">
+            <span className="field-label">Echeance</span>
+            <input
+              className="input"
+              type="date"
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
+            />
+          </label>
+        </div>
+
+        <div>
+          <div className="mb-1.5 flex items-center justify-between">
+            <span className="field-label mb-0">Assignes ({assignees.length})</span>
+            <button className="btn-text btn-sm" onClick={() => setPickerOpen((v) => !v)}>
+              <IconAdd className="h-4 w-4" /> Assigner
+            </button>
+          </div>
+
+          {assignees.length > 0 ? (
+            <ul className="mb-2 flex flex-wrap gap-1.5">
+              {assignees.map((a) => (
+                <li
+                  key={a.user.id}
+                  className="flex items-center gap-1.5 rounded-full border border-[var(--outline)] py-1 pl-1 pr-1.5 text-sm"
+                >
+                  <button
+                    onClick={() => openProfile(a.user.id)}
+                    className="flex items-center gap-1.5"
+                    title="Voir le profil"
+                  >
+                    <span
+                      className="grid h-6 w-6 place-items-center rounded-full text-2xs font-bold text-white"
+                      style={{ background: tint(a.user.id) }}
+                    >
+                      {initials(a.user.fullName)}
+                    </span>
+                    <span className="max-w-[140px] truncate">{a.user.fullName}</span>
+                  </button>
+                  <button
+                    className="grid h-5 w-5 place-items-center rounded-full text-[var(--text-dim)] hover:text-red-500"
+                    onClick={() => toggleAssignee(a.user)}
+                    title="Retirer"
+                  >
+                    <IconClose className="h-3.5 w-3.5" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mb-2 text-xs text-[var(--text-dim)]">Personne n'est assigne a cette tache.</p>
+          )}
+
+          {pickerOpen && (
+            <div className="rounded-lg border border-[var(--outline)]">
+              <div className="relative border-b border-[var(--outline)] p-1.5">
+                <input
+                  autoFocus
+                  className="h-8 w-full rounded-md bg-[var(--surface-2)] px-2.5 text-sm outline-none placeholder:text-[var(--text-dim)]"
+                  placeholder="Rechercher une personne…"
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                />
+              </div>
+              <div className="max-h-44 overflow-y-auto">
+                {filtered.map((u) => (
+                  <button
+                    key={u.id}
+                    onClick={() => toggleAssignee(u)}
+                    className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-sm hover:bg-[var(--surface-2)]"
+                  >
+                    <span
+                      className="grid h-6 w-6 place-items-center rounded-full text-2xs font-bold text-white"
+                      style={{ background: tint(u.id) }}
+                    >
+                      {initials(u.fullName)}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate">{u.fullName}</span>
+                    <IconAdd className="h-4 w-4 shrink-0 text-[var(--text-dim)]" />
+                  </button>
+                ))}
+                {filtered.length === 0 && (
+                  <div className="p-2 text-xs text-[var(--text-dim)]">Aucune personne a ajouter</div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </Modal>
   );
 }

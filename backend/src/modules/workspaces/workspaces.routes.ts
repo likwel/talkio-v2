@@ -22,12 +22,37 @@ const slugify = (s: string) =>
 router.get(
   '/',
   asyncHandler(async (req, res) => {
+    const me = req.user!.id;
     const workspaces = await prisma.workspace.findMany({
-      where: { members: { some: { userId: req.user!.id } } },
+      where: { members: { some: { userId: me } } },
       include: { _count: { select: { members: true, channels: true, boards: true } } },
       orderBy: { createdAt: 'asc' },
     });
-    res.json(workspaces);
+
+    // Messages non lus par espace (somme sur les salons ou l'utilisateur est membre).
+    const memberships = await prisma.channelMember.findMany({
+      where: { userId: me, channel: { workspaceId: { in: workspaces.map((w) => w.id) } } },
+      select: { channelId: true, lastReadAt: true, channel: { select: { workspaceId: true } } },
+    });
+    const perChannel = await Promise.all(
+      memberships.map(async (m) => ({
+        workspaceId: m.channel.workspaceId,
+        count: await prisma.message.count({
+          where: {
+            channelId: m.channelId,
+            parentId: null,
+            authorId: { not: me },
+            ...(m.lastReadAt ? { createdAt: { gt: m.lastReadAt } } : {}),
+          },
+        }),
+      })),
+    );
+    const unreadByWs = new Map<string, number>();
+    for (const { workspaceId, count } of perChannel) {
+      unreadByWs.set(workspaceId, (unreadByWs.get(workspaceId) ?? 0) + count);
+    }
+
+    res.json(workspaces.map((w) => ({ ...w, unreadCount: unreadByWs.get(w.id) ?? 0 })));
   }),
 );
 

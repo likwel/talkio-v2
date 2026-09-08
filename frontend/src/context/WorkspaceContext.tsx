@@ -11,6 +11,8 @@ interface WorkspaceState {
   current: Workspace | null;
   setCurrent: (w: Workspace) => void;
   reload: () => Promise<void>;
+  /** Rafraichit la liste (compteurs de non lus) sans changer l'espace courant. */
+  refreshList: () => Promise<void>;
 }
 
 const Ctx = createContext<WorkspaceState | undefined>(undefined);
@@ -50,12 +52,35 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     if (next) pushRecent(next.id);
   }
 
+  // Rafraichit la liste (compteurs de non lus) sans changer l'espace courant.
+  async function refreshList() {
+    try {
+      const r = await api.get<Workspace[]>('/workspaces');
+      setWorkspaces(r.data);
+      setCurrentState((cur) => (cur ? r.data.find((w) => w.id === cur.id) ?? cur : cur));
+    } catch {
+      /* silencieux */
+    }
+  }
+
   useEffect(() => {
     if (user) reload();
     else {
       setWorkspaces([]);
       setCurrentState(null);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    const id = window.setInterval(refreshList, 20_000);
+    const onFocus = () => refreshList();
+    window.addEventListener('focus', onFocus);
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener('focus', onFocus);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
@@ -81,7 +106,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [workspaces, current, recentTick]);
 
   return (
-    <Ctx.Provider value={{ workspaces, orderedWorkspaces, current, setCurrent, reload }}>
+    <Ctx.Provider value={{ workspaces, orderedWorkspaces, current, setCurrent, reload, refreshList }}>
       {children}
     </Ctx.Provider>
   );

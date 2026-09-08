@@ -75,7 +75,7 @@ export function DialogProvider({ children }: { children: ReactNode }) {
               <button
                 type="button"
                 onClick={() => onConfirm()}
-                className={spec.danger ? 'btn bg-red-600 text-white hover:bg-red-700' : 'btn-primary'}
+                className={spec.danger ? 'btn-danger' : 'btn-primary'}
               >
                 {spec.confirmLabel ?? (spec.kind === 'confirm' ? 'Confirmer' : spec.kind === 'prompt' ? 'Valider' : 'OK')}
               </button>

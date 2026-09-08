@@ -4,6 +4,7 @@ import { toLocalInput } from '@/lib/date';
 import type { Calendar, CalendarEvent } from '@/lib/types';
 import { IconDelete, IconClose } from '@/lib/icons';
 import { useDialog } from '@/context/DialogContext';
+import Select from '@/components/Select';
 
 interface Props {
   calendars: Calendar[];
@@ -90,14 +91,17 @@ export default function EventDialog({ calendars, event, draft, onClose, onSaved 
   }
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 grid place-items-end bg-black/40 p-0 sm:place-items-center sm:p-4"
+      onClick={onClose}
+    >
       <form
         onClick={(e) => e.stopPropagation()}
         onSubmit={submit}
-        className="w-full max-w-md space-y-3 rounded-3xl bg-[var(--surface)] p-6 shadow-elevation-3"
+        className="max-h-[92vh] w-full space-y-3 overflow-y-auto rounded-t-3xl bg-[var(--surface)] p-6 shadow-elevation-3 safe-b sm:max-w-md sm:rounded-3xl sm:pb-6"
       >
         <div className="flex items-center justify-between">
-          <h2 className="text-xl font-normal text-slate-800 dark:text-slate-100">
+          <h2 className="font-display text-lg font-bold text-[var(--text)]">
             {editing ? "Modifier l'evenement" : 'Nouvel evenement'}
           </h2>
           <button type="button" className="icon-btn-sm" onClick={onClose} aria-label="Fermer">
@@ -118,7 +122,7 @@ export default function EventDialog({ calendars, event, draft, onClose, onSaved 
         />
 
         <div className="grid grid-cols-2 gap-2">
-          <label className="text-xs font-medium text-slate-500">
+          <label className="text-xs font-medium text-[var(--text-dim)]">
             Debut
             <input
               className="input mt-1"
@@ -128,7 +132,7 @@ export default function EventDialog({ calendars, event, draft, onClose, onSaved 
               required
             />
           </label>
-          <label className="text-xs font-medium text-slate-500">
+          <label className="text-xs font-medium text-[var(--text-dim)]">
             Fin
             <input
               className="input mt-1"
@@ -145,13 +149,25 @@ export default function EventDialog({ calendars, event, draft, onClose, onSaved 
           Toute la journee
         </label>
 
-        <select className="input" value={calendarId} onChange={(e) => setCalendarId(e.target.value)}>
-          {calendars.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
+        <label className="block text-xs font-medium text-[var(--text-dim)]">
+          Agenda
+          <Select
+            className="mt-1"
+            aria-label="Agenda"
+            value={calendarId}
+            onChange={setCalendarId}
+            options={calendars.map((c) => ({
+              value: c.id,
+              label: c.name,
+              icon: (
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                  style={{ background: c.color }}
+                />
+              ),
+            }))}
+          />
+        </label>
 
         <input
           className="input"
@@ -172,10 +188,10 @@ export default function EventDialog({ calendars, event, draft, onClose, onSaved 
             <button
               type="button"
               onClick={remove}
-              className="flex h-10 items-center gap-1.5 rounded-full px-3 text-sm font-medium text-red-600 transition hover:bg-red-50 dark:hover:bg-red-950/40"
+              className="btn-text text-red-600 hover:bg-red-500/10 hover:text-red-700"
               disabled={busy}
             >
-              <IconDelete className="h-5 w-5" /> Supprimer
+              <IconDelete className="h-4 w-4" /> Supprimer
             </button>
           ) : (
             <span />

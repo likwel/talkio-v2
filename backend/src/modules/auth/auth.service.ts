@@ -21,6 +21,7 @@ const publicUser = {
   email: true,
   fullName: true,
   avatarUrl: true,
+  presenceStatus: true,
   createdAt: true,
 } as const;
 

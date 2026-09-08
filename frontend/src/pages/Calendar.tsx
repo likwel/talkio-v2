@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import clsx from 'clsx';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { getSocket } from '@/lib/socket';
@@ -17,7 +18,17 @@ import {
   weekDays,
 } from '@/lib/date';
 import type { Calendar as Cal, CalendarEvent } from '@/lib/types';
-import { IconMenu, IconCalendar, IconPrev, IconNext, IconSearch, IconAdd } from '@/lib/icons';
+import {
+  IconMenu,
+  IconCalendar,
+  IconPrev,
+  IconNext,
+  IconSearch,
+  IconAdd,
+  IconClose,
+  IconTick,
+} from '@/lib/icons';
+import Select from '@/components/Select';
 import MiniMonth from '@/components/calendar/MiniMonth';
 import TimeGridView from '@/components/calendar/TimeGridView';
 import MonthView from '@/components/calendar/MonthView';
@@ -38,6 +49,7 @@ export default function CalendarPage() {
   );
   const [anchor, setAnchor] = useState(() => startOfDay(new Date()));
   const [search, setSearch] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 1024);
   const [live, setLive] = useState(false);
   const [dialog, setDialog] = useState<
@@ -150,50 +162,107 @@ export default function CalendarPage() {
   return (
     <div className="flex h-full flex-col">
       {/* ---------- Toolbar agenda ---------- */}
-      <div className="flex flex-wrap items-center gap-2 px-3 py-2">
-        <button className="icon-btn" onClick={() => setSidebarOpen((v) => !v)} aria-label="Panneau lateral">
-          <IconMenu className="h-6 w-6" />
-        </button>
-        <IconCalendar className="h-7 w-7 text-brand-600" />
-        <span className="hidden text-[20px] font-normal text-slate-700 dark:text-slate-200 sm:inline">Agenda</span>
-        <span
-          className={`h-2 w-2 rounded-full ${live ? 'bg-brand-500' : 'bg-slate-300'}`}
-          title={live ? 'Synchronisation temps reel active' : 'Hors ligne'}
-        />
+      <div className="flex flex-col gap-2 border-b border-[var(--outline)] px-3 py-2">
+        {/* Rangee 1 : navigation + creation */}
+        <div className="flex items-center gap-1.5">
+          <IconCalendar className="h-6 w-6 shrink-0 text-[var(--accent)]" />
+          <span className="hidden font-display text-lg font-bold text-[var(--text)] sm:inline">Agenda</span>
+          <span
+            className={`ml-0.5 h-2 w-2 shrink-0 rounded-full ${live ? 'bg-[var(--accent)]' : 'bg-[var(--text-dim)]'}`}
+            title={live ? 'Synchronisation temps reel active' : 'Hors ligne'}
+          />
 
-        <button className="btn-outlined ml-2 h-9" onClick={() => setAnchor(startOfDay(new Date()))}>
-          Aujourd'hui
-        </button>
+          <button className="btn-outlined ml-1 shrink-0" onClick={() => setAnchor(startOfDay(new Date()))}>
+            Aujourd'hui
+          </button>
 
-        <div className="flex items-center">
-          <button className="icon-btn" onClick={() => move(-1)} aria-label="Precedent">
-            <IconPrev className="h-6 w-6" />
-          </button>
-          <button className="icon-btn" onClick={() => move(1)} aria-label="Suivant">
-            <IconNext className="h-6 w-6" />
-          </button>
+          <div className="flex shrink-0 items-center">
+            <button className="icon-btn" onClick={() => move(-1)} aria-label="Precedent">
+              <IconPrev className="h-6 w-6" />
+            </button>
+            <button className="icon-btn" onClick={() => move(1)} aria-label="Suivant">
+              <IconNext className="h-6 w-6" />
+            </button>
+          </div>
+
+          <div className="ml-auto flex shrink-0 items-center gap-1.5">
+            <button
+              className={clsx('icon-btn', sidebarOpen && 'accent-active')}
+              onClick={() => setSidebarOpen((v) => !v)}
+              aria-label="Panneau lateral (agendas)"
+              title="Afficher / masquer le panneau"
+            >
+              <IconMenu className="h-6 w-6" />
+            </button>
+            <button className="btn-primary" onClick={() => openCreate(nextHour())} title="Nouvel evenement">
+              <IconAdd className="h-5 w-5" />
+              <span className="hidden sm:inline">Creer</span>
+            </button>
+          </div>
         </div>
 
-        <h1 className="text-base font-normal capitalize text-slate-800 dark:text-slate-100 sm:text-[22px]">{title}</h1>
+        {/* Rangee 2 : date + outils */}
+        <div className="flex items-center gap-2">
+          <h1 className="min-w-0 flex-1 truncate font-display text-md font-bold capitalize text-[var(--text)] sm:text-xl">
+            {title}
+          </h1>
 
-        <div className="ml-auto flex items-center gap-2">
           <div className="relative hidden md:block">
-            <IconSearch className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+            <IconSearch className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-[var(--text-dim)]" />
             <input
-              className="input h-10 w-60 pl-10"
-              placeholder="Rechercher"
+              className="input h-9 w-56 pl-10 pr-8"
+              placeholder="Rechercher un evenement"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
+            {search && (
+              <button
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-[var(--text-dim)] hover:text-[var(--text)]"
+                onClick={() => setSearch('')}
+                aria-label="Effacer"
+              >
+                <IconClose className="h-4 w-4" />
+              </button>
+            )}
           </div>
-          <select className="input h-10 w-32" value={view} onChange={(e) => setView(e.target.value as View)}>
-            {(['day', 'week', 'month'] as View[]).map((v) => (
-              <option key={v} value={v}>
-                {VIEW_LABEL[v]}
-              </option>
-            ))}
-          </select>
+          <button
+            className={`icon-btn shrink-0 md:hidden ${searchOpen || search ? 'accent-active' : ''}`}
+            onClick={() => setSearchOpen((v) => !v)}
+            aria-label="Rechercher"
+          >
+            <IconSearch className="h-5 w-5" />
+          </button>
+
+          <Select
+            className="h-9 w-28 shrink-0 sm:w-32"
+            aria-label="Vue de l'agenda"
+            value={view}
+            onChange={(v) => setView(v as View)}
+            options={(['day', 'week', 'month'] as View[]).map((v) => ({ value: v, label: VIEW_LABEL[v] }))}
+          />
         </div>
+
+        {searchOpen && (
+          <div className="relative md:hidden">
+            <IconSearch className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-[var(--text-dim)]" />
+            <input
+              autoFocus
+              className="input h-9 w-full pl-10 pr-8"
+              placeholder="Rechercher un evenement"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            {search && (
+              <button
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-[var(--text-dim)]"
+                onClick={() => setSearch('')}
+                aria-label="Effacer"
+              >
+                <IconClose className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ---------- Corps ---------- */}
@@ -206,11 +275,8 @@ export default function CalendarPage() {
             className="z-30 flex w-64 shrink-0 flex-col gap-5 overflow-y-auto bg-[var(--bg)] p-3
                        max-lg:absolute max-lg:inset-y-0 max-lg:left-0 max-lg:border-r max-lg:border-[var(--outline)] max-lg:shadow-elevation-3"
           >
-            <button className="fab w-fit" onClick={() => openCreate(nextHour())}>
-              <span className="grid h-8 w-8 place-items-center rounded-full">
-                <IconAdd className="h-6 w-6 text-brand-600" />
-              </span>
-              Creer
+            <button className="btn-primary w-full" onClick={() => openCreate(nextHour())}>
+              <IconAdd className="h-5 w-5" /> Creer un evenement
             </button>
 
             <MiniMonth
@@ -223,7 +289,7 @@ export default function CalendarPage() {
 
             <div>
               <div className="mb-1 flex items-center justify-between px-1">
-                <span className="text-sm font-medium text-slate-600 dark:text-slate-300">Mes agendas</span>
+                <span className="text-sm font-medium text-[var(--text-dim)]">Mes agendas</span>
                 <button className="icon-btn-sm" onClick={addCalendar} aria-label="Ajouter un agenda">
                   <IconAdd className="h-4 w-4" />
                 </button>
@@ -231,18 +297,30 @@ export default function CalendarPage() {
               <ul className="space-y-0.5">
                 {calendars.data?.map((c) => (
                   <li key={c.id}>
-                    <label className="flex cursor-pointer items-center gap-3 rounded-lg px-2 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/5">
-                      <input
-                        type="checkbox"
-                        checked={c.isVisible}
-                        onChange={() => toggleCalendar(c)}
-                        className="h-4 w-4 rounded"
-                        style={{ accentColor: c.color }}
-                      />
-                      <span className="truncate">{c.name}</span>
-                    </label>
+                    <button
+                      type="button"
+                      onClick={() => toggleCalendar(c)}
+                      aria-pressed={c.isVisible}
+                      className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-sm transition hover:bg-black/5 dark:hover:bg-white/5"
+                    >
+                      <span
+                        className="grid h-[18px] w-[18px] shrink-0 place-items-center rounded-[6px] border-2 transition"
+                        style={{
+                          borderColor: c.color,
+                          background: c.isVisible ? c.color : 'transparent',
+                        }}
+                      >
+                        {c.isVisible && <IconTick className="h-3 w-3 text-white" />}
+                      </span>
+                      <span className={clsx('truncate', !c.isVisible && 'text-[var(--text-dim)]')}>
+                        {c.name}
+                      </span>
+                    </button>
                   </li>
                 ))}
+                {calendars.data?.length === 0 && (
+                  <li className="px-2 py-1 text-xs text-[var(--text-dim)]">Aucun agenda</li>
+                )}
               </ul>
             </div>
           </aside>
