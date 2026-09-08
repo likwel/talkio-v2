@@ -1,0 +1,537 @@
+// Talkio - schema Prisma
+// Domaines: auth, workspaces, messagerie, appels/visio, agenda, kanban, MEAL, collecte de donnees
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Auth & utilisateurs
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  fullName     String
+  avatarUrl    String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  refreshTokens     RefreshToken[]
+  memberships       WorkspaceMember[]
+  channelMemberships ChannelMember[]
+  messages          Message[]
+  callParticipants  CallParticipant[]
+  createdCalls      Call[]            @relation("CallCreatedBy")
+  assignedCards     CardAssignee[]
+  comments          Comment[]
+  measurements      MealMeasurement[]
+  formResponses     FormResponse[]
+  createdForms      Form[]           @relation("FormCreatedBy")
+  createdProjects   Project[]        @relation("ProjectCreatedBy")
+  calendars         Calendar[]
+  createdEvents     CalendarEvent[]  @relation("EventCreatedBy")
+  eventAttendances  EventAttendee[]
+  friendRequestsSent     Friendship[] @relation("FriendRequester")
+  friendRequestsReceived Friendship[] @relation("FriendAddressee")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Workspaces (organisations / espaces de travail)
+// ---------------------------------------------------------------------------
+
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  MEMBER
+  GUEST
+}
+
+model Workspace {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members   WorkspaceMember[]
+  channels  Channel[]
+  boards    Board[]
+  calls     Call[]
+  projects  Project[]
+  forms     Form[]
+  calendars Calendar[]
+}
+
+model WorkspaceMember {
+  id          String        @id @default(cuid())
+  workspaceId String
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role        WorkspaceRole @default(MEMBER)
+  createdAt   DateTime      @default(now())
+
+  @@unique([workspaceId, userId])
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Messagerie (canaux, messages directs, fils)
+// ---------------------------------------------------------------------------
+
+enum ChannelType {
+  PUBLIC
+  PRIVATE
+  DIRECT
+}
+
+model Channel {
+  id          String      @id @default(cuid())
+  workspaceId String
+  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name        String?
+  topic       String?
+  type        ChannelType @default(PUBLIC)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  members  ChannelMember[]
+  messages Message[]
+  calls    Call[]
+
+  @@index([workspaceId])
+}
+
+model ChannelMember {
+  id            String   @id @default(cuid())
+  channelId     String
+  channel       Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lastReadAt    DateTime?
+  isAdmin       Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  @@unique([channelId, userId])
+  @@index([userId])
+}
+
+model Message {
+  id        String    @id @default(cuid())
+  channelId String
+  channel   Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  body      String
+  parentId  String?
+  parent    Message?  @relation("MessageThread", fields: [parentId], references: [id], onDelete: Cascade)
+  replies   Message[] @relation("MessageThread")
+  editedAt  DateTime?
+  createdAt DateTime  @default(now())
+
+  attachments Attachment[]
+
+  @@index([channelId, createdAt])
+  @@index([parentId])
+}
+
+model Attachment {
+  id        String   @id @default(cuid())
+  messageId String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  url       String
+  name      String
+  mimeType  String
+  size      Int
+  createdAt DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Appels audio / visio-conference
+// ---------------------------------------------------------------------------
+
+enum CallType {
+  AUDIO
+  VIDEO
+}
+
+enum CallStatus {
+  RINGING
+  ONGOING
+  ENDED
+  MISSED
+}
+
+model Call {
+  id          String     @id @default(cuid())
+  workspaceId String
+  workspace   Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  channelId   String?
+  channel     Channel?   @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  roomId      String     @unique
+  type        CallType   @default(VIDEO)
+  status      CallStatus @default(RINGING)
+  createdById String
+  createdBy   User       @relation("CallCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  startedAt   DateTime   @default(now())
+  endedAt     DateTime?
+
+  participants CallParticipant[]
+
+  @@index([workspaceId])
+}
+
+model CallParticipant {
+  id       String    @id @default(cuid())
+  callId   String
+  call     Call      @relation(fields: [callId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  joinedAt DateTime  @default(now())
+  leftAt   DateTime?
+
+  @@unique([callId, userId])
+}
+
+// ---------------------------------------------------------------------------
+// Kanban - gestion de projet
+// ---------------------------------------------------------------------------
+
+model Board {
+  id          String   @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  columns Column[]
+
+  @@index([workspaceId])
+}
+
+model Column {
+  id       String @id @default(cuid())
+  boardId  String
+  board    Board  @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  name     String
+  position Int    @default(0)
+  wipLimit Int?
+
+  cards Card[]
+
+  @@index([boardId])
+}
+
+enum CardPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+model Card {
+  id          String       @id @default(cuid())
+  columnId    String
+  column      Column       @relation(fields: [columnId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  position    Int          @default(0)
+  priority    CardPriority @default(MEDIUM)
+  dueDate     DateTime?
+  labels      String[]     @default([])
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  assignees CardAssignee[]
+  comments  Comment[]
+
+  @@index([columnId, position])
+}
+
+model CardAssignee {
+  id     String @id @default(cuid())
+  cardId String
+  card   Card   @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([cardId, userId])
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  cardId    String
+  card      Card     @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  body      String
+  createdAt DateTime @default(now())
+
+  @@index([cardId])
+}
+
+// ---------------------------------------------------------------------------
+// MEAL - Monitoring, Evaluation, Accountability & Learning
+// ---------------------------------------------------------------------------
+
+model Project {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name        String
+  code        String?
+  description String?
+  donor       String?
+  startDate   DateTime?
+  endDate     DateTime?
+  createdById String
+  createdBy   User      @relation("ProjectCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  indicators MealIndicator[]
+  forms      Form[]
+
+  @@index([workspaceId])
+}
+
+enum LogframeLevel {
+  IMPACT
+  OUTCOME
+  OUTPUT
+  ACTIVITY
+}
+
+model MealIndicator {
+  id           String        @id @default(cuid())
+  projectId    String
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  code         String
+  name         String
+  level        LogframeLevel @default(OUTCOME)
+  unit         String?
+  baseline     Float?
+  target       Float?
+  disaggregation String[]    @default([])
+  meansOfVerification String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  measurements MealMeasurement[]
+
+  @@unique([projectId, code])
+  @@index([projectId])
+}
+
+model MealMeasurement {
+  id          String        @id @default(cuid())
+  indicatorId String
+  indicator   MealIndicator @relation(fields: [indicatorId], references: [id], onDelete: Cascade)
+  value       Float
+  periodStart DateTime
+  periodEnd   DateTime
+  location    String?
+  note        String?
+  dimensions  Json?
+  recordedById String
+  recordedBy  User          @relation(fields: [recordedById], references: [id], onDelete: Cascade)
+  createdAt   DateTime      @default(now())
+
+  @@index([indicatorId, periodStart])
+}
+
+// ---------------------------------------------------------------------------
+// Collecte de donnees - formulaires dynamiques
+// ---------------------------------------------------------------------------
+
+enum FormStatus {
+  DRAFT
+  PUBLISHED
+  CLOSED
+}
+
+enum FieldType {
+  TEXT
+  TEXTAREA
+  NUMBER
+  DATE
+  SELECT
+  MULTISELECT
+  BOOLEAN
+  GEOPOINT
+  PHOTO
+}
+
+model Form {
+  id          String     @id @default(cuid())
+  workspaceId String
+  workspace   Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  projectId   String?
+  project     Project?   @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  title       String
+  description String?
+  status      FormStatus @default(DRAFT)
+  createdById String
+  createdBy   User       @relation("FormCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  fields    FormField[]
+  responses FormResponse[]
+
+  @@index([workspaceId])
+}
+
+model FormField {
+  id         String    @id @default(cuid())
+  formId     String
+  form       Form      @relation(fields: [formId], references: [id], onDelete: Cascade)
+  label      String
+  key        String
+  type       FieldType @default(TEXT)
+  required   Boolean   @default(false)
+  position   Int       @default(0)
+  options    String[]  @default([])
+  helpText   String?
+
+  answers FormAnswer[]
+
+  @@unique([formId, key])
+  @@index([formId])
+}
+
+model FormResponse {
+  id           String   @id @default(cuid())
+  formId       String
+  form         Form     @relation(fields: [formId], references: [id], onDelete: Cascade)
+  submittedById String?
+  submittedBy  User?    @relation(fields: [submittedById], references: [id], onDelete: SetNull)
+  submittedAt  DateTime @default(now())
+  latitude     Float?
+  longitude    Float?
+
+  answers FormAnswer[]
+
+  @@index([formId, submittedAt])
+}
+
+model FormAnswer {
+  id         String       @id @default(cuid())
+  responseId String
+  response   FormResponse @relation(fields: [responseId], references: [id], onDelete: Cascade)
+  fieldId    String
+  field      FormField    @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  value      Json
+
+  @@unique([responseId, fieldId])
+}
+
+// ---------------------------------------------------------------------------
+// Agenda / calendrier
+// ---------------------------------------------------------------------------
+
+model Calendar {
+  id          String   @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  ownerId     String
+  owner       User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  name        String
+  color       String   @default("#0cae36")
+  isDefault   Boolean  @default(false)
+  isVisible   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  events CalendarEvent[]
+
+  @@index([workspaceId, ownerId])
+}
+
+model CalendarEvent {
+  id          String   @id @default(cuid())
+  calendarId  String
+  calendar    Calendar @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  location    String?
+  color       String?
+  startsAt    DateTime
+  endsAt      DateTime
+  allDay      Boolean  @default(false)
+  createdById String
+  createdBy   User     @relation("EventCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  attendees EventAttendee[]
+
+  @@index([calendarId, startsAt])
+  @@index([startsAt, endsAt])
+}
+
+enum AttendeeStatus {
+  INVITED
+  ACCEPTED
+  DECLINED
+  TENTATIVE
+}
+
+model EventAttendee {
+  id      String         @id @default(cuid())
+  eventId String
+  event   CalendarEvent  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userId  String
+  user    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status  AttendeeStatus @default(INVITED)
+
+  @@unique([eventId, userId])
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Systeme d'amitie
+// ---------------------------------------------------------------------------
+
+enum FriendStatus {
+  PENDING
+  ACCEPTED
+  BLOCKED
+}
+
+model Friendship {
+  id          String       @id @default(cuid())
+  requesterId String
+  requester   User         @relation("FriendRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  addresseeId String
+  addressee   User         @relation("FriendAddressee", fields: [addresseeId], references: [id], onDelete: Cascade)
+  status      FriendStatus @default(PENDING)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@unique([requesterId, addresseeId])
+  @@index([addresseeId, status])
+  @@index([requesterId, status])
+}

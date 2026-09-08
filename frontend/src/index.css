@@ -1,0 +1,136 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ------------------------------------------------------------------ *
+ *  Talkio - interface moderne (Inter, neutres doux, accent vert)
+ * ------------------------------------------------------------------ */
+
+:root {
+  --bg: #f6f7f8;
+  --surface: #ffffff;
+  --surface-2: #f0f2f4;
+  --rail: #ffffff;
+  --text: #16181c;
+  --text-dim: #5b6572;
+  --outline: #e6e8ec;
+  --accent: #0cae36;
+}
+:root.dark {
+  --bg: #0b0c0e;
+  --surface: #16181c;
+  --surface-2: #1e2126;
+  --rail: #101215;
+  --text: #e9eaec;
+  --text-dim: #9aa3af;
+  --outline: #262a30;
+  --accent: #21c65a;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(130, 140, 150, 0.35) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: rgba(130, 140, 150, 0.32);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+body {
+  @apply font-sans antialiased;
+  background: var(--bg);
+  color: var(--text);
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+}
+
+@layer components {
+  /* --- Boutons pilule --- */
+  .btn {
+    @apply inline-flex h-9 select-none items-center justify-center gap-2 rounded-full px-4
+           text-[13px] font-semibold tracking-[-0.01em] transition
+           disabled:pointer-events-none disabled:opacity-40;
+  }
+  .btn-primary {
+    @apply btn bg-[var(--accent)] text-white hover:brightness-[1.06] active:brightness-95
+           shadow-[0_1px_2px_rgba(12,174,54,.35)];
+  }
+  .btn-tonal {
+    @apply btn bg-brand-50 text-brand-800 hover:bg-brand-100
+           dark:bg-brand-500/15 dark:text-brand-200 dark:hover:bg-brand-500/25;
+  }
+  .btn-outlined {
+    @apply btn border border-[var(--outline)] bg-[var(--surface)] text-[var(--text)]
+           hover:bg-[var(--surface-2)];
+  }
+  .btn-text {
+    @apply btn px-3 text-[var(--text-dim)] hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/5;
+  }
+  .btn-ghost {
+    @apply btn border border-[var(--outline)] bg-[var(--surface)] text-[var(--text)]
+           hover:bg-[var(--surface-2)];
+  }
+
+  /* --- Bouton icone --- */
+  .icon-btn {
+    @apply inline-grid h-9 w-9 place-items-center rounded-lg text-[var(--text-dim)] transition
+           hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/10;
+  }
+  .icon-btn-sm {
+    @apply inline-grid h-7 w-7 place-items-center rounded-md text-[var(--text-dim)] transition
+           hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/10;
+  }
+
+  /* --- Bouton "Creer" --- */
+  .fab {
+    @apply inline-flex h-11 items-center gap-2 rounded-full bg-[var(--accent)] px-5 text-sm
+           font-semibold text-white shadow-[0_2px_10px_rgba(12,174,54,.35)] transition
+           hover:brightness-[1.06];
+  }
+
+  /* --- Champ texte --- */
+  .input {
+    @apply h-10 w-full rounded-lg border border-[var(--outline)] bg-[var(--surface)] px-3 text-sm
+           text-[var(--text)] outline-none transition
+           placeholder:text-[var(--text-dim)]
+           focus:border-[var(--accent)] focus:ring-4 focus:ring-brand-500/15;
+  }
+  textarea.input {
+    @apply h-auto py-2.5 leading-relaxed;
+  }
+  select.input {
+    @apply pr-9;
+  }
+
+  /* --- Carte --- */
+  .card {
+    @apply rounded-xl border border-[var(--outline)] bg-[var(--surface)] p-4;
+  }
+  .card-elevated {
+    @apply rounded-xl border border-[var(--outline)] bg-[var(--surface)] p-4 shadow-elevation-1;
+  }
+
+  .chip {
+    @apply inline-flex h-7 items-center gap-1 rounded-full border border-[var(--outline)] px-2.5
+           text-xs font-medium;
+  }
+
+  .surface {
+    background: var(--surface);
+  }
+  .surface-2 {
+    background: var(--surface-2);
+  }
+}
+
+h1,
+h2,
+h3 {
+  font-family: theme('fontFamily.display');
+  letter-spacing: -0.02em;
+}
