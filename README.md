@@ -15,7 +15,7 @@ Plateforme collaborative centree sur la **messagerie** (serveurs / salons / mess
 - **Compte & parametres** : le rail n'affiche qu'un **bouton de compte** (avatar + statut, **nom et e-mail** sur deux lignes) ; son menu deroulant : **Voir mon profil** → `ProfileModal` ; **Changer le statut** → sous-menu qui s'ouvre **au survol** (En ligne / Absent / Ne pas deranger / Invisible, application immediate) ; **Modifier le profil** et **Parametres** → `SettingsModal` (onglets **Profil**, **Apparence**, **Securite**, **Compte** — plus d'onglet Automatisation) ; **Automatisation** → `AutomationsModal` ; **Amis** → `FriendsModal` (Amis / Demandes recues / **En attente** envoyees / Ajouter par e-mail) ; **Se deconnecter**.
 - **Aucun `alert()` / `prompt()` / `confirm()` natif** : fenetres modales maison (`DialogProvider`) ; contenus qui defilent si la hauteur est serree.
 - Icones **Material Symbols** (`react-icons/md`), centralisees dans `src/lib/icons.ts`.
-- Couleur par defaut : **bleu #3390EC** (violet #8774E1 en accent secondaire) ; toute l'UI utilise `--accent`, `--accent-soft`, `--accent-strong`, `--accent-ring` (recalcules en JS depuis la couleur choisie).
+- Couleur par defaut : **rose #FF2C5F** (violet #8774E1 en accent secondaire) ; toute l'UI utilise `--accent`, `--accent-soft`, `--accent-strong`, `--accent-ring` (recalcules en JS depuis la couleur choisie).
 
 ## Stack
 

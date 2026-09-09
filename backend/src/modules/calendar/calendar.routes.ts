@@ -16,7 +16,7 @@ function broadcast(workspaceId: string, change: CalendarChange, event: unknown) 
   getIO()?.to(`calendar:${workspaceId}`).emit('calendar:changed', { change, event });
 }
 
-const PALETTE = ['#0cae36', '#63e6be', '#0ea5e9', '#f59e0b', '#ef4444', '#a855f7', '#ec4899', '#6366f1'];
+const PALETTE = ['#ff2c5f', '#8774e1', '#0ea5e9', '#f59e0b', '#22c55e', '#a855f7', '#ec4899', '#6366f1'];
 
 /** Renvoie les agendas de l'utilisateur dans l'espace, en creant un agenda par defaut si besoin. */
 async function ensureCalendars(userId: string, workspaceId: string) {

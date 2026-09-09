@@ -1,4 +1,13 @@
-import { FormEvent, KeyboardEvent, ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  FormEvent,
+  Fragment,
+  KeyboardEvent,
+  ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
@@ -8,8 +17,7 @@ import { useWorkspace } from '@/context/WorkspaceContext';
 import { useAuth } from '@/context/AuthContext';
 import { useProfile } from '@/context/ProfileContext';
 import { useDialog } from '@/context/DialogContext';
-import { usePresence, DOT_LABEL, type PresenceDotState } from '@/context/PresenceContext';
-import PresenceDot from '@/components/PresenceDot';
+import { usePresence, DOT_LABEL } from '@/context/PresenceContext';
 import type { ActiveCall, Attachment, Channel, Message } from '@/lib/types';
 import {
   IconAdd,
@@ -26,61 +34,55 @@ import {
   IconSettings,
   IconAttach,
   IconFile,
+  IconDownload,
   IconClose,
   IconEdit,
   IconDelete,
   IconReply,
   IconShare,
   IconTick,
+  IconDone,
+  IconDoneAll,
 } from '@/lib/icons';
 import Modal from '@/components/Modal';
-import Wordmark from '@/components/Wordmark';
+import WorkspaceSwitcher from '@/components/WorkspaceSwitcher';
+import AccountMenu from '@/components/AccountMenu';
+import { useTheme } from '@/context/ThemeContext';
+import { wallpaperStyle } from '@/lib/wallpapers';
 import NewConversationModal from '@/components/NewConversationModal';
 import FriendsModal from '@/components/FriendsModal';
 import ChannelSettingsModal from '@/components/ChannelSettingsModal';
+import ChannelMembersModal from '@/components/ChannelMembersModal';
 import WorkspaceSettingsModal from '@/components/WorkspaceSettingsModal';
+import AutomationsModal from '@/components/AutomationsModal';
+import { useImageViewer } from '@/components/ImageViewer';
+import Avatar, { avatarColor as avColor } from '@/components/Avatar';
 
-function initials(name?: string | null) {
-  if (!name) return '?';
-  return name.split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase() ?? '').join('');
-}
-
-const AV_COLORS = ['#0cae36', '#2563eb', '#d946ef', '#f59e0b', '#ef4444', '#14b8a6', '#8b5cf6', '#ec4899'];
-function avColor(id: string) {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
-  return AV_COLORS[h % AV_COLORS.length];
-}
-
-function Avatar({
-  id,
-  name,
-  size = 36,
-  status,
-}: {
-  id: string;
-  name?: string | null;
-  size?: number;
-  status?: PresenceDotState;
-}) {
+function sameDay(a: string | Date, b: string | Date) {
+  const x = new Date(a);
+  const y = new Date(b);
   return (
-    <span className="relative inline-block shrink-0" style={{ width: size, height: size }}>
-      <span
-        className="grid h-full w-full place-items-center rounded-full font-semibold text-white"
-        style={{ background: avColor(id), fontSize: size * 0.38 }}
-      >
-        {initials(name)}
-      </span>
-      {status && (
-        <PresenceDot
-          state={status}
-          size={Math.max(8, Math.round(size * 0.28))}
-          className="absolute bottom-0 right-0"
-        />
-      )}
-    </span>
+    x.getFullYear() === y.getFullYear() &&
+    x.getMonth() === y.getMonth() &&
+    x.getDate() === y.getDate()
   );
 }
+function dayLabel(iso: string) {
+  const d = new Date(iso);
+  const now = new Date();
+  if (sameDay(d, now)) return "Aujourd'hui";
+  const yest = new Date(now);
+  yest.setDate(now.getDate() - 1);
+  if (sameDay(d, yest)) return 'Hier';
+  const sameYear = d.getFullYear() === now.getFullYear();
+  return d.toLocaleDateString('fr-FR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    ...(sameYear ? {} : { year: 'numeric' }),
+  });
+}
+
 
 export default function Chat() {
   const { current } = useWorkspace();
@@ -106,7 +108,10 @@ export default function Chat() {
   const [sharing, setSharing] = useState<Message | null>(null);
   const { openProfile } = useProfile();
   const { presenceOf } = usePresence();
+  const { theme } = useTheme();
   const dialog = useDialog();
+  const [membersOpen, setMembersOpen] = useState(false);
+  const [autoModalOpen, setAutoModalOpen] = useState(false);
   // Mobile : on affiche soit la liste, soit la conversation
   const [mobileView, setMobileView] = useState<'list' | 'thread'>(channelId ? 'thread' : 'list');
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -162,6 +167,19 @@ export default function Chat() {
 
   const activeId = channelId || salons[0]?.id;
   const activeChannel = channels.data?.find((c) => c.id === activeId);
+
+  // --- Accuses de lecture (vu / lu) ---
+  const otherMembers = useMemo(
+    () => (activeChannel?.members ?? []).filter((m) => m.userId !== user?.id),
+    [activeChannel?.members, user?.id],
+  );
+  const receiptsOn = activeChannel?.readReceipts !== false;
+  const isReadByAll = (m: Message) =>
+    otherMembers.length > 0 &&
+    otherMembers.every(
+      (mm) =>
+        mm.lastReadAt && new Date(mm.lastReadAt).getTime() >= new Date(m.createdAt).getTime(),
+    );
 
   const dmPartner = (c?: Channel) =>
     c?.type === 'DIRECT' ? c.members?.find((m) => m.userId !== user?.id)?.user : undefined;
@@ -324,11 +342,18 @@ export default function Chat() {
     if (!mention) return;
     const first = name.split(/\s+/)[0];
     const before = draft.slice(0, mention.from);
-    const after = draft.slice(mention.from).replace(/^@[^\s@]*/, '');
-    const next = `${before}@${first} ${after.replace(/^\s+/, '')}`;
+    const after = draft.slice(mention.from).replace(/^@[^\s@]*/, '').replace(/^\s+/, '');
+    const inserted = `@${first} `;
+    const next = `${before}${inserted}${after}`;
+    const caret = before.length + inserted.length; // juste après « @Nom  »
     setDraft(next);
     setMention(null);
-    setTimeout(() => taRef.current?.focus(), 0);
+    setTimeout(() => {
+      const ta = taRef.current;
+      if (!ta) return;
+      ta.focus();
+      ta.setSelectionRange(caret, caret);
+    }, 0);
   }
 
   async function createSalon(e: FormEvent) {
@@ -349,7 +374,11 @@ export default function Chat() {
   async function startDmWith(userId: string) {
     if (!current) return;
     try {
-      const r = await api.post<Channel>('/channels/direct', { workspaceId: current.id, userIds: [userId] });
+      const r = await api.post<Channel>(
+        '/channels/direct',
+        { workspaceId: current.id, userIds: [userId] },
+        { skipErrorToast: true },
+      );
       await channels.refetch();
       navigate(`/chat/${r.data.id}`);
     } catch {
@@ -374,7 +403,11 @@ export default function Chat() {
   );
 
   const headerCall = activeId ? callByChannel.get(activeId) : undefined;
-  const memberCount = activeChannel?._count?.members ?? activeChannel?.members?.length ?? 0;
+  const memberCount =
+    activeChannel?.activeMemberCount ??
+    activeChannel?._count?.members ??
+    activeChannel?.members?.length ??
+    0;
 
   const memberUsers = useMemo(
     () => (activeChannel?.members ?? []).map((m) => m.user),
@@ -415,15 +448,14 @@ export default function Chat() {
       >
         <div className="border-b border-[var(--outline)] p-3">
           <div className="mb-2 flex items-center gap-2">
-            <span className="min-w-0 flex-1 truncate font-display text-md font-bold">
-              {current?.name ?? <Wordmark size="sm" />}
-            </span>
+            <WorkspaceSwitcher />
             <button className="icon-btn-sm" title="Amis" onClick={() => setFriendsOpen(true)}>
               <IconFriends className="h-[18px] w-[18px]" />
             </button>
             <button className="icon-btn-sm" title="Parametres de l'espace" onClick={() => setWsSettingsOpen(true)}>
               <IconSettings className="h-[18px] w-[18px]" />
             </button>
+            <AccountMenu align="right" size={26} />
           </div>
           <div className="relative">
             <IconSearch className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-dim)]" />
@@ -489,6 +521,7 @@ export default function Chat() {
                       <Avatar
                         id={p?.id ?? c.id}
                         name={p?.fullName}
+                        src={p?.avatarUrl}
                         size={22}
                         status={p ? presenceOf(p.id, p.presenceStatus) : undefined}
                       />
@@ -518,8 +551,16 @@ export default function Chat() {
         open={chanSettingsOpen}
         onClose={() => setChanSettingsOpen(false)}
         onChanged={() => channels.refetch()}
+        onOpenAutomations={() => setAutoModalOpen(true)}
+      />
+      <ChannelMembersModal
+        channel={activeChannel}
+        open={membersOpen}
+        onClose={() => setMembersOpen(false)}
+        onChanged={() => channels.refetch()}
       />
       <WorkspaceSettingsModal open={wsSettingsOpen} onClose={() => setWsSettingsOpen(false)} />
+      <AutomationsModal open={autoModalOpen} onClose={() => setAutoModalOpen(false)} />
       <ShareModal
         message={sharing}
         channels={channels.data ?? []}
@@ -556,7 +597,7 @@ export default function Chat() {
               return (
                 <>
                   <button onClick={() => openProfile(partner.id)} className="shrink-0" title="Voir le profil">
-                    <Avatar id={partner.id} name={partner.fullName} size={34} status={st} />
+                    <Avatar id={partner.id} name={partner.fullName} src={partner.avatarUrl} size={34} status={st} />
                   </button>
                   <div className="min-w-0 flex-1 leading-tight">
                     <div className="truncate font-display text-md font-bold">{partner.fullName}</div>
@@ -609,11 +650,18 @@ export default function Chat() {
             <span className="mx-0.5 h-4 w-px bg-[var(--outline)]" />
             <button
               className="flex h-8 items-center gap-1.5 rounded-full px-2.5 text-sm font-semibold text-[var(--text-dim)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
-              title="Membres et parametres du salon"
-              onClick={() => setChanSettingsOpen(true)}
+              title="Membres du salon"
+              onClick={() => setMembersOpen(true)}
             >
               <IconGroups className="h-[18px] w-[18px]" />
               {memberCount > 0 && <span>{memberCount}</span>}
+            </button>
+            <button
+              className="grid h-8 w-8 place-items-center rounded-full text-[var(--text-dim)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
+              title="Paramètres du salon"
+              onClick={() => setChanSettingsOpen(true)}
+            >
+              <IconSettings className="h-[18px] w-[18px]" />
             </button>
           </div>
         </div>
@@ -632,7 +680,10 @@ export default function Chat() {
           </button>
         )}
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-4">
+        <div
+          className="chat-bg min-h-0 flex-1 overflow-y-auto overflow-x-clip px-3 pb-4 pt-6 sm:px-4"
+          style={wallpaperStyle(activeChannel?.wallpaper, theme)}
+        >
           {messages.isLoading && <div className="text-sm text-[var(--text-dim)]">Chargement…</div>}
           {messages.data?.length === 0 && (
             <div className="grid h-full place-items-center text-center text-[var(--text-dim)]">
@@ -644,71 +695,80 @@ export default function Chat() {
               </div>
             </div>
           )}
-          <div className="space-y-4">
+          <div className="space-y-2">
             {groups.map((g, gi) => {
               const mine = g.author.id === user?.id;
+              const groupish = activeChannel?.type !== 'DIRECT' || isGroup(activeChannel);
               const callMsg = g.items[0].kind === 'CALL' ? g.items[0] : null;
+              const prevG = groups[gi - 1];
+              const prevAt = prevG?.items[prevG.items.length - 1]?.createdAt;
+              const dayEl =
+                !prevAt || !sameDay(prevAt, g.items[0].createdAt) ? (
+                  <div className="date-chip">{dayLabel(g.items[0].createdAt)}</div>
+                ) : null;
               if (callMsg) {
                 return (
-                  <CallEvent
-                    key={gi}
-                    m={callMsg}
-                    mine={mine}
-                    live={!!callMsg.call && activeRoomIds.has(callMsg.call.roomId)}
-                    onJoin={() => callMsg.call && navigate(`/call/${callMsg.call.roomId}`)}
-                  />
+                  <Fragment key={gi}>
+                    {dayEl}
+                    <CallEvent
+                      m={callMsg}
+                      mine={mine}
+                      live={!!callMsg.call && activeRoomIds.has(callMsg.call.roomId)}
+                      onJoin={() => callMsg.call && navigate(`/call/${callMsg.call.roomId}`)}
+                    />
+                  </Fragment>
                 );
               }
               return (
-                <div key={gi} className="flex items-start gap-3">
-                  <button
-                    onClick={() => openProfile(g.author.id)}
-                    className="shrink-0 self-start"
-                    title="Voir le profil"
+                <Fragment key={gi}>
+                  {dayEl}
+                  <div
+                    className={clsx('flex items-end gap-2', mine && 'flex-row-reverse')}
                   >
-                    <Avatar
-                      id={g.author.id}
-                      name={g.author.fullName}
-                      status={presenceOf(g.author.id, g.author.presenceStatus)}
-                    />
-                  </button>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-baseline gap-2">
-                      {/* Nom facon WhatsApp : petit, colore, italique */}
-                      <button
-                        onClick={() => openProfile(g.author.id)}
-                        className="text-2xs font-semibold italic hover:underline"
-                        style={{ color: avColor(g.author.id) }}
-                      >
-                        {g.author.fullName}
-                      </button>
-                      <span className="text-2xs text-[var(--text-dim)]">
-                        {new Date(g.items[0].createdAt).toLocaleString('fr-FR', {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          day: '2-digit',
-                          month: 'short',
-                        })}
-                      </span>
-                    </div>
-
-                    <div className="mt-1 flex flex-col gap-1">
+                  {!mine && groupish ? (
+                    <button
+                      onClick={() => openProfile(g.author.id)}
+                      className="shrink-0 self-end"
+                      title="Voir le profil"
+                    >
+                      <Avatar
+                        id={g.author.id}
+                        name={g.author.fullName}
+                        src={g.author.avatarUrl}
+                        size={28}
+                        status={presenceOf(g.author.id, g.author.presenceStatus)}
+                      />
+                    </button>
+                  ) : (
+                    !mine && <span className="w-2 shrink-0" />
+                  )}
+                  <div
+                    className={clsx(
+                      'flex min-w-0 flex-col gap-0.5',
+                      mine ? 'items-end' : 'items-start',
+                    )}
+                  >
+                    <div className="contents">
                       {g.items.map((m, mi) => {
                         const isEditing = editing?.id === m.id;
                         return (
                           <div
                             key={m.id}
                             className={clsx(
-                              'group/msg relative w-fit max-w-[min(100%,640px)] rounded-2xl px-3 py-2 text-base leading-relaxed shadow-[0_1px_2px_rgba(0,0,0,0.05)] transition-colors',
-                              mi === 0 ? 'rounded-tl-md' : 'rounded-tl-2xl',
-                              mine
-                                ? 'border border-transparent bg-[var(--accent-soft)] text-[var(--text)]'
-                                : 'border border-[var(--outline)] bg-[var(--surface)] hover:border-[var(--accent)]',
+                              'msg-bubble group/msg',
+                              mine ? 'msg-out' : 'msg-in',
+                              mi === 0 && (mine ? 'rounded-tr-[3px]' : 'rounded-tl-[3px]'),
                             )}
                           >
-                            {/* Barre d'actions au survol */}
+                            {/* Barre d'actions : ancree au coin haut de la bulle, chevauche
+                                legerement pour qu'il n'y ait aucun "trou" de survol. */}
                             {!isEditing && (
-                              <div className="absolute -top-3 right-1 z-10 hidden items-center gap-0.5 rounded-lg border border-[var(--outline)] bg-[var(--surface)] px-0.5 py-0.5 shadow-elevation-1 group-hover/msg:flex">
+                              <div
+                                className={clsx(
+                                  'absolute bottom-full z-20 mb-[-6px] hidden items-center gap-0.5 rounded-full border border-[var(--outline)] bg-[var(--surface)] px-1 py-0.5 text-[var(--text)] shadow-elevation-2 group-hover/msg:flex',
+                                  mine ? 'right-0' : 'left-0',
+                                )}
+                              >
                                 {!mine && (
                                   <button
                                     className="icon-btn-sm"
@@ -749,9 +809,20 @@ export default function Chat() {
                               </div>
                             )}
 
+                            {/* Nom de l'auteur (salon / groupe, premier message) */}
+                            {!mine && groupish && mi === 0 && (
+                              <button
+                                onClick={() => openProfile(g.author.id)}
+                                className="mb-0.5 block max-w-full truncate text-[13px] font-semibold leading-tight hover:underline"
+                                style={{ color: avColor(g.author.id) }}
+                              >
+                                {g.author.fullName}
+                              </button>
+                            )}
+
                             {/* Message transfere */}
                             {m.forwardedFrom && (
-                              <div className="mb-0.5 flex items-center gap-1 text-2xs italic text-[var(--text-dim)]">
+                              <div className="mb-0.5 flex items-center gap-1 text-[11px] italic opacity-60">
                                 <IconShare className="h-3 w-3" />
                                 Transfere{m.forwardedFrom !== g.author.fullName ? ` · de ${m.forwardedFrom}` : ''}
                               </div>
@@ -759,14 +830,14 @@ export default function Chat() {
 
                             {/* Message cite */}
                             {m.parent && (
-                              <div className="mb-0.5 border-l-2 border-[var(--accent)] pl-2 text-xs">
+                              <div className="mb-1 rounded-[5px] border-l-[3px] border-[var(--accent)] bg-black/[0.05] py-1 pl-2 pr-2 text-[12.5px] leading-tight dark:bg-white/10">
                                 <span
-                                  className="font-semibold"
+                                  className="block font-semibold"
                                   style={{ color: avColor(m.parent.author.id) }}
                                 >
                                   {m.parent.author.fullName}
                                 </span>
-                                <span className="ml-1 text-[var(--text-dim)] line-clamp-1">
+                                <span className="line-clamp-1 opacity-70">
                                   {m.parent.body || 'piece jointe'}
                                 </span>
                               </div>
@@ -776,7 +847,7 @@ export default function Chat() {
                               <div className="space-y-1.5 py-1">
                                 <textarea
                                   autoFocus
-                                  className="input text-base"
+                                  className="input text-sm"
                                   rows={2}
                                   value={editing!.body}
                                   onChange={(e) => setEditing({ id: m.id, body: e.target.value })}
@@ -799,35 +870,56 @@ export default function Chat() {
                               </div>
                             ) : (
                               m.body && (
-                                <p className="whitespace-pre-wrap break-words">
+                                <span className="text-[14px] leading-[19px]">
                                   {renderBody(m.body)}
                                   {m.editedAt && (
-                                    <span className="ml-1 text-2xs text-[var(--text-dim)]">(modifie)</span>
+                                    <span className="ml-1 text-[11px] opacity-60">(modifie)</span>
                                   )}
-                                </p>
+                                  {/* Reserve la place de l'heure sur la derniere ligne (comme WhatsApp) */}
+                                  <span
+                                    className={clsx('inline-block', mine && receiptsOn ? 'w-[64px]' : 'w-[46px]')}
+                                    aria-hidden="true"
+                                  />
+                                </span>
                               )
                             )}
 
                             {!!m.attachments?.length && (
-                              <div className="mt-1 flex flex-wrap gap-2">
-                                {m.attachments.map((a) => (
-                                  <AttachmentView key={a.id} a={a} />
-                                ))}
-                              </div>
+                              <MessageAttachments atts={m.attachments} />
+                            )}
+
+                            {!isEditing && (
+                              <span
+                                className="msg-time"
+                                title={new Date(m.createdAt).toLocaleString('fr-FR')}
+                              >
+                                {new Date(m.createdAt).toLocaleTimeString('fr-FR', {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })}
+                                {mine &&
+                                  receiptsOn &&
+                                  (isReadByAll(m) ? (
+                                    <IconDoneAll className="text-sky-500" title="Lu" />
+                                  ) : (
+                                    <IconDone className="opacity-70" title="Envoye" />
+                                  ))}
+                              </span>
                             )}
                           </div>
                         );
                       })}
                     </div>
                   </div>
-                </div>
+                  </div>
+                </Fragment>
               );
             })}
           </div>
           <div ref={bottomRef} />
         </div>
 
-        <div className="relative px-3 pb-3 sm:px-4 sm:pb-4">
+        <div className="relative border-t border-[var(--outline)] bg-[var(--bg)] px-3 pb-3 pt-2 sm:px-4 sm:pb-4">
           {/* Suggestions de mention */}
           {mention && mentionCandidates.length > 0 && (
             <div className="absolute bottom-full left-3 right-3 mb-1 max-h-52 overflow-y-auto rounded-xl border border-[var(--outline)] bg-[var(--surface)] p-1 shadow-elevation-3 sm:left-4 sm:right-4">
@@ -837,7 +929,7 @@ export default function Chat() {
                   onClick={() => insertMention(u.fullName)}
                   className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-[var(--surface-2)]"
                 >
-                  <Avatar id={u.id} name={u.fullName} size={22} />
+                  <Avatar id={u.id} name={u.fullName} src={u.avatarUrl} size={22} />
                   <span className="min-w-0 flex-1 truncate">{u.fullName}</span>
                   <span className="text-2xs text-[var(--text-dim)]">
                     @{u.fullName.split(/\s+/)[0]}
@@ -867,28 +959,46 @@ export default function Chat() {
           {uploadError && <div className="mb-1.5 px-1 text-xs text-red-600">{uploadError}</div>}
           {(pending.length > 0 || uploading) && (
             <div className="mb-1.5 flex flex-wrap items-center gap-2">
-              {pending.map((a, i) => (
-                <span
-                  key={i}
-                  className="flex items-center gap-1.5 rounded-lg border border-[var(--outline)] bg-[var(--surface)] py-1 pl-2 pr-1 text-xs"
-                >
-                  <IconFile className="h-4 w-4 shrink-0 text-[var(--text-dim)]" />
-                  <span className="max-w-[160px] truncate">{a.name}</span>
-                  <span className="text-2xs text-[var(--text-dim)]">{fmtSize(a.size)}</span>
-                  <button
-                    type="button"
-                    className="grid h-5 w-5 place-items-center rounded text-[var(--text-dim)] hover:text-red-500"
-                    onClick={() => setPending((p) => p.filter((_, j) => j !== i))}
-                    title="Retirer"
+              {pending.map((a, i) =>
+                a.mimeType.startsWith('image/') ? (
+                  <span key={i} className="group/att relative">
+                    <img
+                      src={a.url}
+                      alt={a.name}
+                      className="h-16 w-16 rounded-lg border border-[var(--outline)] object-cover"
+                    />
+                    <button
+                      type="button"
+                      className="absolute -right-1.5 -top-1.5 grid h-5 w-5 place-items-center rounded-full bg-[var(--surface)] text-[var(--text-dim)] shadow-elevation-1 transition hover:text-red-500"
+                      onClick={() => setPending((p) => p.filter((_, j) => j !== i))}
+                      title="Retirer"
+                    >
+                      <IconClose className="h-3.5 w-3.5" />
+                    </button>
+                  </span>
+                ) : (
+                  <span
+                    key={i}
+                    className="flex items-center gap-1.5 rounded-lg border border-[var(--outline)] bg-[var(--surface)] py-1 pl-2 pr-1 text-xs"
                   >
-                    <IconClose className="h-3.5 w-3.5" />
-                  </button>
-                </span>
-              ))}
+                    <IconFile className="h-4 w-4 shrink-0 text-[var(--text-dim)]" />
+                    <span className="max-w-[160px] truncate">{a.name}</span>
+                    <span className="text-2xs text-[var(--text-dim)]">{fmtSize(a.size)}</span>
+                    <button
+                      type="button"
+                      className="grid h-5 w-5 place-items-center rounded text-[var(--text-dim)] hover:text-red-500"
+                      onClick={() => setPending((p) => p.filter((_, j) => j !== i))}
+                      title="Retirer"
+                    >
+                      <IconClose className="h-3.5 w-3.5" />
+                    </button>
+                  </span>
+                ),
+              )}
               {uploading && <span className="text-xs text-[var(--text-dim)]">Envoi du fichier…</span>}
             </div>
           )}
-          <div className="flex items-end gap-1.5 rounded-2xl border border-[var(--outline)] bg-[var(--surface)] p-2 focus-within:border-[var(--accent)] focus-within:ring-4 focus-within:ring-[var(--accent-soft)]">
+          <div className="flex items-end gap-1.5 rounded-[24px] border border-[var(--outline)] bg-[var(--surface)] p-1.5 shadow-elevation-1 transition-shadow focus-within:border-[var(--accent-soft)] focus-within:shadow-elevation-2 focus-within:ring-2 focus-within:ring-[var(--accent-ring)]">
             <input
               ref={fileRef}
               type="file"
@@ -917,7 +1027,7 @@ export default function Chat() {
             <button
               onClick={send}
               disabled={(!draft.trim() && pending.length === 0) || uploading}
-              className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[var(--accent)] text-white transition hover:brightness-110 disabled:opacity-30"
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[var(--accent)] text-white shadow-sm transition hover:brightness-110 disabled:opacity-30 disabled:shadow-none"
               title="Envoyer"
             >
               <IconSend className="h-[18px] w-[18px]" />
@@ -1116,31 +1226,96 @@ function fmtSize(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} Mo`;
 }
 
-function AttachmentView({ a }: { a: Attachment }) {
-  if (a.mimeType.startsWith('image/')) {
+const isImage = (a: Attachment) => a.mimeType.startsWith('image/');
+
+/** Pièces jointes d'un message : galerie d'images (grille + visionneuse) + fichiers. */
+function MessageAttachments({ atts }: { atts: Attachment[] }) {
+  const viewer = useImageViewer();
+  const images = atts.filter(isImage);
+  const files = atts.filter((a) => !isImage(a));
+  const gallery = images.map((a) => ({ url: a.url, name: a.name }));
+
+  return (
+    <div className="mt-1 space-y-1.5">
+      {images.length > 0 && (
+        <ImageGallery images={images} onOpen={(i) => viewer.open(gallery, i)} />
+      )}
+      {files.map((a) => (
+        <FileChip key={a.id} a={a} />
+      ))}
+    </div>
+  );
+}
+
+/** Grille type Messenger : 1 = grande, 2 = côte à côte, 3 = 1 + 2, 4+ = 2×2 avec « +N ». */
+function ImageGallery({
+  images,
+  onOpen,
+}: {
+  images: Attachment[];
+  onOpen: (i: number) => void;
+}) {
+  const n = images.length;
+  const shown = images.slice(0, 4);
+  const imgCls = 'h-full w-full cursor-zoom-in object-cover transition hover:brightness-95';
+
+  if (n === 1) {
     return (
-      <a href={a.url} target="_blank" rel="noreferrer" className="block">
+      <button
+        type="button"
+        onClick={() => onOpen(0)}
+        className="block max-w-[320px] overflow-hidden rounded-xl border border-[var(--outline)]"
+      >
         <img
-          src={a.url}
-          alt={a.name}
-          className="max-h-64 max-w-[280px] rounded-xl border border-[var(--outline)] object-cover"
+          src={images[0].url}
+          alt={images[0].name}
+          className="max-h-72 w-full cursor-zoom-in object-cover"
         />
-      </a>
+      </button>
     );
   }
+
+  return (
+    <div
+      className={clsx(
+        'grid max-w-[320px] gap-1 overflow-hidden rounded-xl border border-[var(--outline)]',
+        n === 2 ? 'aspect-[2/1] grid-cols-2' : 'aspect-square grid-cols-2 grid-rows-2',
+      )}
+    >
+      {shown.map((a, i) => (
+        <button
+          type="button"
+          key={a.id}
+          onClick={() => onOpen(i)}
+          className={clsx('relative block h-full w-full overflow-hidden', n === 3 && i === 0 && 'row-span-2')}
+        >
+          <img src={a.url} alt={a.name} className={imgCls} />
+          {i === 3 && n > 4 && (
+            <span className="absolute inset-0 grid place-items-center bg-black/55 text-lg font-bold text-white">
+              +{n - 4}
+            </span>
+          )}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function FileChip({ a }: { a: Attachment }) {
   return (
     <a
       href={a.url}
       target="_blank"
       rel="noreferrer"
       download={a.name}
-      className="flex items-center gap-2 rounded-xl border border-[var(--outline)] bg-[var(--surface)] px-3 py-2 text-sm transition hover:bg-[var(--surface-2)]"
+      className="flex max-w-[280px] items-center gap-2 rounded-xl border border-[var(--outline)] bg-[var(--surface)] px-3 py-2 text-sm transition hover:bg-[var(--surface-2)]"
     >
       <IconFile className="h-5 w-5 shrink-0 text-[var(--text-dim)]" />
-      <span className="min-w-0">
-        <span className="block max-w-[220px] truncate font-medium">{a.name}</span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate font-medium">{a.name}</span>
         <span className="block text-2xs text-[var(--text-dim)]">{fmtSize(a.size)}</span>
       </span>
+      <IconDownload className="h-4 w-4 shrink-0 text-[var(--text-dim)]" />
     </a>
   );
 }
@@ -1171,11 +1346,11 @@ function CallEvent({
       : 'Appel en cours'
     : missed
       ? isVideo
-        ? 'Visio manquee'
-        : 'Appel manque'
+        ? 'Visio manquée'
+        : 'Appel manqué'
       : isVideo
-        ? 'Visio terminee'
-        : 'Appel termine';
+        ? 'Visio terminée'
+        : 'Appel terminé';
   const dur = c && !live && !missed && c.endedAt ? ` · ${fmtDuration(c.startedAt, c.endedAt)}` : '';
   const time = new Date(m.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 

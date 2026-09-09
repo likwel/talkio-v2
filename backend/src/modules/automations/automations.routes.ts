@@ -11,10 +11,12 @@ const router = Router();
 const TRIGGERS = [
   'form.response.created',
   'card.moved.done',
+  'card.created',
   'meal.measurement.created',
   'message.keyword',
+  'channel.created',
 ] as const;
-const ACTIONS = ['message.post', 'card.create'] as const;
+const ACTIONS = ['message.post', 'card.create', 'webhook.post'] as const;
 
 const bodySchema = z.object({
   workspaceId: z.string(),

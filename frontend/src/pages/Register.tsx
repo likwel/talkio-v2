@@ -1,10 +1,12 @@
 import { FormEvent, useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
-import Wordmark, { LogoBadge } from '@/components/Wordmark';
+import { useT } from '@/i18n';
+import Wordmark from '@/components/Wordmark';
 
 export default function Register() {
   const { user, register } = useAuth();
+  const t = useT();
   const navigate = useNavigate();
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -22,7 +24,7 @@ export default function Register() {
       await register(fullName, email, password);
       navigate('/');
     } catch (err: any) {
-      setError(err?.response?.data?.error ?? 'Inscription impossible');
+      setError(err?.response?.data?.error ?? t('error.register'));
     } finally {
       setBusy(false);
     }
@@ -31,24 +33,21 @@ export default function Register() {
   return (
     <div className="grid min-h-dvh place-items-center overflow-y-auto p-4 py-10">
       <form onSubmit={submit} className="w-full max-w-sm space-y-4 rounded-3xl border border-[var(--outline)] bg-[var(--surface)] p-8 shadow-elevation-1">
-        <div className="flex items-center gap-3">
-          <LogoBadge size="lg" />
-          <div>
-            <Wordmark size="lg" />
-            <p className="text-xs text-[var(--text-dim)]">Creer un compte</p>
-          </div>
+        <div>
+          <Wordmark size="xl" />
+          <p className="mt-1.5 text-xs text-[var(--text-dim)]">{t('auth.register.subtitle')}</p>
         </div>
         {error && <div className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-600 dark:bg-red-950/50">{error}</div>}
         <label className="block text-sm">
-          Nom complet
+          {t('auth.field.fullName')}
           <input className="input mt-1" value={fullName} onChange={(e) => setFullName(e.target.value)} required />
         </label>
         <label className="block text-sm">
-          Email
+          {t('auth.field.email')}
           <input className="input mt-1" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
         </label>
         <label className="block text-sm">
-          Mot de passe (8 caracteres min.)
+          {t('auth.register.passwordHint')}
           <input
             className="input mt-1"
             type="password"
@@ -59,12 +58,12 @@ export default function Register() {
           />
         </label>
         <button className="btn-primary w-full" disabled={busy}>
-          {busy ? 'Creation…' : "S'inscrire"}
+          {busy ? t('auth.register.submitting') : t('auth.register.submit')}
         </button>
         <p className="text-center text-sm text-[var(--text-dim)]">
-          Deja inscrit ?{' '}
+          {t('auth.register.haveAccount')}{' '}
           <Link to="/login" className="text-[var(--accent)] hover:underline">
-            Se connecter
+            {t('auth.register.signin')}
           </Link>
         </p>
       </form>

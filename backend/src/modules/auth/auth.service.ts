@@ -1,3 +1,4 @@
+import { createHash, randomBytes } from 'crypto';
 import { prisma } from '../../lib/prisma';
 import { hashPassword, verifyPassword } from '../../lib/password';
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../../lib/jwt';
@@ -36,6 +37,18 @@ export async function register(input: { email: string; password: string; fullNam
       fullName: input.fullName,
     },
     select: publicUser,
+  });
+
+  // Espace personnel : dépôt par défaut des Projets / MEAL / Collecte + messagerie de base.
+  const rnd = Math.random().toString(36).slice(2, 8);
+  await prisma.workspace.create({
+    data: {
+      name: 'Personnel',
+      slug: `perso-${user.id.slice(0, 6)}-${rnd}`,
+      isPersonal: true,
+      members: { create: { userId: user.id, role: 'OWNER' } },
+      channels: { create: { name: 'general', type: 'PUBLIC', topic: 'Notes personnelles' } },
+    },
   });
 
   const tokens = tokensFor(user);
@@ -106,6 +119,67 @@ export function updateProfile(userId: string, input: { fullName?: string; avatar
       ...(input.avatarUrl !== undefined ? { avatarUrl: input.avatarUrl || null } : {}),
     },
     select: publicUser,
+  });
+}
+
+const RESET_TTL_MIN = 60;
+const hashResetToken = (raw: string) => createHash('sha256').update(raw).digest('hex');
+
+/**
+ * Demande de reinitialisation : cree un jeton a usage unique (1h).
+ * Reponse volontairement identique que le compte existe ou non.
+ * Aucun service d'email n'etant configure, le lien est journalise cote serveur
+ * et renvoye dans `devToken` hors production pour faciliter les tests.
+ */
+export async function requestPasswordReset(email: string) {
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (!user || !user.isActive) return { ok: true as const };
+
+  await prisma.passwordResetToken.updateMany({
+    where: { userId: user.id, usedAt: null },
+    data: { usedAt: new Date() },
+  });
+
+  const token = randomBytes(32).toString('hex');
+  await prisma.passwordResetToken.create({
+    data: {
+      tokenHash: hashResetToken(token),
+      userId: user.id,
+      expiresAt: new Date(Date.now() + RESET_TTL_MIN * 60_000),
+    },
+  });
+
+  const base = process.env.APP_URL ?? 'http://localhost:5173';
+  // eslint-disable-next-line no-console
+  console.log(`[password-reset] ${email} -> ${base}/reset-password?token=${token}`);
+
+  return {
+    ok: true as const,
+    ...(process.env.NODE_ENV === 'production' ? {} : { devToken: token }),
+  };
+}
+
+/** Applique un nouveau mot de passe a partir d'un jeton valide, puis l'invalide. */
+export async function resetPassword(rawToken: string, newPassword: string) {
+  const record = await prisma.passwordResetToken.findUnique({
+    where: { tokenHash: hashResetToken(rawToken) },
+  });
+  if (!record || record.usedAt || record.expiresAt < new Date()) {
+    throw badRequest('Lien de reinitialisation invalide ou expire');
+  }
+
+  await prisma.user.update({
+    where: { id: record.userId },
+    data: { passwordHash: await hashPassword(newPassword) },
+  });
+  await prisma.passwordResetToken.update({
+    where: { id: record.id },
+    data: { usedAt: new Date() },
+  });
+  // Deconnecte les sessions existantes
+  await prisma.refreshToken.updateMany({
+    where: { userId: record.userId, revokedAt: null },
+    data: { revokedAt: new Date() },
   });
 }
 

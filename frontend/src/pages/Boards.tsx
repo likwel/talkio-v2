@@ -5,16 +5,20 @@ import clsx from 'clsx';
 import { api } from '@/lib/api';
 import { useWorkspace } from '@/context/WorkspaceContext';
 import type { Board, BoardStatus } from '@/lib/types';
-import { IconAdd, IconKanban, IconClose } from '@/lib/icons';
+import { IconAdd, IconKanban, IconClose, IconEdit } from '@/lib/icons';
 import ViewToggle, { useViewMode } from '@/components/ViewToggle';
 import EmptyState from '@/components/EmptyState';
 import Pagination, { usePagination } from '@/components/Pagination';
+import BoardSettingsModal from '@/components/BoardSettingsModal';
+import Avatar from '@/components/Avatar';
+import PageHeader from '@/components/PageHeader';
+import WorkspaceTag, { WorkspacePicker } from '@/components/WorkspaceTag';
 
 export const STATUS_LABEL: Record<BoardStatus, string> = {
   ACTIVE: 'Actif',
   ON_HOLD: 'En pause',
-  COMPLETED: 'Termine',
-  ARCHIVED: 'Archive',
+  COMPLETED: 'Terminé',
+  ARCHIVED: 'Archivé',
 };
 export const STATUS_STYLE: Record<BoardStatus, string> = {
   ACTIVE: 'bg-[var(--accent-soft)] text-[var(--accent-strong)]',
@@ -40,25 +44,27 @@ export function ProgressBar({ pct }: { pct: number }) {
 }
 
 export default function Boards() {
-  const { current } = useWorkspace();
+  const { workspaces, personal } = useWorkspace();
   const qc = useQueryClient();
   const [name, setName] = useState('');
+  const [wsId, setWsId] = useState('');
   const [filter, setFilter] = useState<'all' | BoardStatus>('all');
   const [view, setView] = useViewMode('boards');
   const [addOpen, setAddOpen] = useState(false);
+  const [editBoard, setEditBoard] = useState<Board | null>(null);
+  const targetWs = wsId || personal?.id || workspaces[0]?.id;
 
   const boards = useQuery({
-    queryKey: ['boards', current?.id],
-    enabled: !!current,
-    queryFn: async () => (await api.get<Board[]>('/boards', { params: { workspaceId: current!.id } })).data,
+    queryKey: ['boards', 'all'],
+    queryFn: async () => (await api.get<Board[]>('/boards')).data,
   });
 
   const createBoard = useMutation({
-    mutationFn: async () => (await api.post('/boards', { workspaceId: current!.id, name })).data,
+    mutationFn: async () => (await api.post('/boards', { workspaceId: targetWs, name })).data,
     onSuccess: () => {
       setName('');
       setAddOpen(false);
-      qc.invalidateQueries({ queryKey: ['boards', current?.id] });
+      qc.invalidateQueries({ queryKey: ['boards', 'all'] });
     },
   });
 
@@ -76,23 +82,16 @@ export default function Boards() {
   const pg = usePagination(shown, 12, `${filter}|${view}`);
 
   return (
-    <div className="page max-w-8xl space-y-5">
-      {/* En-tete */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="page-title">
-            <IconKanban className="h-6 w-6 text-[var(--accent)]" /> Projets
-          </h1>
-          <p className="mt-0.5 text-sm text-[var(--text-dim)]">
-            Suivez l'avancement de vos projets en Kanban ou en liste.
-          </p>
-        </div>
+    <div className="flex h-full flex-col">
+      <PageHeader icon={<IconKanban className="h-6 w-6 shrink-0 text-[var(--accent)]" />} title="Projets">
         <button className="btn-primary" onClick={() => setAddOpen((v) => !v)}>
           {addOpen ? <IconClose className="h-5 w-5" /> : <IconAdd className="h-5 w-5" />}
-          {addOpen ? 'Fermer' : 'Nouveau projet'}
+          <span className="hidden sm:inline">{addOpen ? 'Fermer' : 'Nouveau projet'}</span>
         </button>
-      </div>
+      </PageHeader>
 
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="page max-w-8xl space-y-5">
       {addOpen && (
         <form onSubmit={submit} className="card flex flex-wrap items-end gap-2">
           <label className="min-w-[220px] flex-1">
@@ -105,8 +104,14 @@ export default function Boards() {
               onChange={(e) => setName(e.target.value)}
             />
           </label>
+          <WorkspacePicker
+            className="w-44"
+            value={targetWs ?? ''}
+            onChange={setWsId}
+            options={workspaces.map((w) => ({ id: w.id, name: w.name, isPersonal: w.isPersonal }))}
+          />
           <button className="btn-primary shrink-0" disabled={createBoard.isPending || !name.trim()}>
-            <IconAdd className="h-5 w-5" /> Creer
+            <IconAdd className="h-5 w-5" /> Créer
           </button>
         </form>
       )}
@@ -135,7 +140,7 @@ export default function Boards() {
         <EmptyState
           icon={<IconKanban className="h-7 w-7" />}
           title="Aucun projet"
-          hint="Creez votre premier projet pour organiser les taches de l'equipe."
+          hint="Créez votre premier projet pour organiser les tâches de l'équipe."
           action={
             <button className="btn-primary" onClick={() => setAddOpen(true)}>
               <IconAdd className="h-5 w-5" /> Nouveau projet
@@ -145,43 +150,50 @@ export default function Boards() {
       ) : view === 'grid' ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {pg.slice.map((b) => (
-            <Link
-              key={b.id}
-              to={`/projects/${b.id}`}
-              className="card group space-y-3 transition hover:-translate-y-0.5 hover:shadow-elevation-2"
-              style={b.color ? { borderTopColor: b.color, borderTopWidth: 3 } : undefined}
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="text-md font-semibold item-title">{b.name}</div>
-                <span className={clsx('shrink-0 rounded-md px-2 py-0.5 text-2xs font-semibold', STATUS_STYLE[b.status])}>
-                  {STATUS_LABEL[b.status]}
-                </span>
-              </div>
+            <div key={b.id} className="group relative">
+              <Link
+                to={`/projects/${b.id}`}
+                className="card block space-y-3 transition hover:-translate-y-0.5 hover:shadow-elevation-2"
+              >
+                <div className="flex items-start justify-between gap-2 pr-7">
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    {b.color && <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: b.color }} />}
+                    <span className="truncate text-md font-semibold item-title">{b.name}</span>
+                  </span>
+                  <span className={clsx('shrink-0 rounded-md px-2 py-0.5 text-2xs font-semibold', STATUS_STYLE[b.status])}>
+                    {STATUS_LABEL[b.status]}
+                  </span>
+                </div>
+              <WorkspaceTag ws={b.workspace} />
               {b.description && <p className="line-clamp-2 text-xs text-[var(--text-dim)]">{b.description}</p>}
               {b.progress && (
                 <div className="space-y-1">
                   <ProgressBar pct={b.progress.pct} />
                   <div className="text-2xs text-[var(--text-dim)]">
-                    {b.progress.done}/{b.progress.total} taches · {b.progress.pct}%
+                    {b.progress.done}/{b.progress.total} tâches · {b.progress.pct}%
                   </div>
                 </div>
               )}
               <div className="flex items-center justify-between text-2xs text-[var(--text-dim)]">
                 <span className="flex -space-x-1.5">
                   {b.lead && (
-                    <span
-                      className="grid h-6 w-6 place-items-center rounded-full text-2xs font-bold text-white ring-2 ring-[var(--surface)]"
-                      style={{ background: tint(b.lead.id) }}
-                      title={`Chef : ${b.lead.fullName}`}
-                    >
-                      {initials(b.lead.fullName)}
+                    <span className="rounded-full ring-2 ring-[var(--surface)]" title={`Chef : ${b.lead.fullName}`}>
+                      <Avatar id={b.lead.id} name={b.lead.fullName} src={b.lead.avatarUrl} size={24} />
                     </span>
                   )}
                   {(b._count?.members ?? 0) > 0 && <span className="pl-2">{b._count?.members} membre(s)</span>}
                 </span>
-                {b.endDate && <span>Echeance {new Date(b.endDate).toLocaleDateString('fr-FR')}</span>}
+                {b.endDate && <span>Échéance {new Date(b.endDate).toLocaleDateString('fr-FR')}</span>}
               </div>
-            </Link>
+              </Link>
+              <button
+                className="icon-btn-sm absolute right-2 top-2 bg-[var(--surface)] opacity-0 shadow-elevation-1 transition group-hover:opacity-100 focus:opacity-100"
+                onClick={() => setEditBoard(b)}
+                title="Modifier le projet"
+              >
+                <IconEdit className="h-4 w-4" />
+              </button>
+            </div>
           ))}
           {pg.total === 0 && <p className="col-span-full py-6 text-center text-sm text-[var(--text-dim)]">Aucun projet avec ce filtre.</p>}
         </div>
@@ -198,6 +210,7 @@ export default function Boards() {
                 style={{ background: b.color ?? 'var(--outline)' }}
               />
               <span className="min-w-0 flex-1 truncate font-medium item-title">{b.name}</span>
+              <WorkspaceTag ws={b.workspace} className="hidden sm:inline-flex" />
               {b.progress && (
                 <span className="hidden w-40 shrink-0 items-center gap-2 sm:flex">
                   <ProgressBar pct={b.progress.pct} />
@@ -231,6 +244,17 @@ export default function Boards() {
         start={pg.start}
         end={pg.end}
       />
+        </div>
+      </div>
+
+      {editBoard && (
+        <BoardSettingsModal
+          board={editBoard}
+          open
+          onClose={() => setEditBoard(null)}
+          onChanged={() => qc.invalidateQueries({ queryKey: ['boards', 'all'] })}
+        />
+      )}
     </div>
   );
 }

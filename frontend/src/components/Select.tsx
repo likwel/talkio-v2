@@ -151,7 +151,8 @@ export default function Select({
             bottom: rect.drop === 'up' ? window.innerHeight - rect.top : undefined,
             left: rect.left,
             width: Math.max(rect.width, 200),
-            zIndex: 60,
+            // Au-dessus des modales (z-80) : un Select cherchable peut vivre dans une modale.
+            zIndex: 90,
           }}
           className="flex max-h-[min(20rem,60vh)] flex-col overflow-hidden rounded-lg border border-[var(--outline)] bg-[var(--surface)] shadow-elevation-3"
         >

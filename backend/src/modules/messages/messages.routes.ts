@@ -81,6 +81,14 @@ router.post(
   asyncHandler(async (req, res) => {
     const channel = await requireChannelAccess(req.user!.id, req.body.channelId);
 
+    const membership = await prisma.channelMember.findUnique({
+      where: { channelId_userId: { channelId: req.body.channelId, userId: req.user!.id } },
+      select: { canWrite: true },
+    });
+    if (membership && membership.canWrite === false) {
+      throw forbidden("Ecriture non autorisee dans ce salon");
+    }
+
     const message = await prisma.message.create({
       data: {
         channelId: req.body.channelId,
@@ -98,12 +106,37 @@ router.post(
     const io = getIO();
     io?.to(`channel:${req.body.channelId}`).emit('message:new', message);
 
-    // Notification globale : chaque membre du canal (sauf l'auteur) sur sa room `user:<id>`.
-    const members = await prisma.channelMember.findMany({
-      where: { channelId: req.body.channelId, userId: { not: req.user!.id } },
+    // --- Destinataires des notifications (room `user:<id>`) ---
+    const authorId = req.user!.id;
+    const recipients = new Set<string>();
+
+    const memberRows = await prisma.channelMember.findMany({
+      where: { channelId: req.body.channelId, userId: { not: authorId } },
       select: { userId: true },
     });
-    const notify = {
+    memberRows.forEach((m) => recipients.add(m.userId));
+
+    // Mentions `@Prenom` : resolues sur les membres de l'espace (meme s'ils n'ont
+    // pas encore de ligne ChannelMember). Le mentionne recoit toujours une notif.
+    const mentioned = new Set<string>();
+    const tokens = new Set(
+      [...message.body.matchAll(/(?:^|\s)@([\p{L}][\p{L}\-']*)/gu)].map((m) => m[1].toLowerCase()),
+    );
+    if (tokens.size > 0) {
+      const wsMembers = await prisma.workspaceMember.findMany({
+        where: { workspaceId: channel.workspaceId, userId: { not: authorId } },
+        select: { userId: true, user: { select: { fullName: true } } },
+      });
+      for (const m of wsMembers) {
+        const firstName = m.user.fullName.split(/\s+/)[0]?.toLowerCase() ?? '';
+        if (firstName && tokens.has(firstName)) {
+          mentioned.add(m.userId);
+          recipients.add(m.userId);
+        }
+      }
+    }
+
+    const notifyBase = {
       channelId: req.body.channelId,
       workspaceId: channel.workspaceId,
       isDirect: channel.type === 'DIRECT',
@@ -111,7 +144,9 @@ router.post(
       preview: message.body.slice(0, 140) || 'Piece jointe',
       createdAt: message.createdAt,
     };
-    members.forEach((m) => io?.to(`user:${m.userId}`).emit('message:notify', notify));
+    recipients.forEach((uid) =>
+      io?.to(`user:${uid}`).emit('message:notify', { ...notifyBase, mention: mentioned.has(uid) }),
+    );
 
     if (!message.parentId) {
       runAutomations(channel.workspaceId, 'message.keyword', {

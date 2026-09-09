@@ -4,17 +4,8 @@ import Modal from '@/components/Modal';
 import { api } from '@/lib/api';
 import { useWorkspace } from '@/context/WorkspaceContext';
 import { useDialog } from '@/context/DialogContext';
+import Avatar from '@/components/Avatar';
 import { IconSearch, IconAdd, IconTick } from '@/lib/icons';
-
-const AV = ['#0cae36', '#2563eb', '#d946ef', '#f59e0b', '#ef4444', '#14b8a6', '#8b5cf6', '#ec4899'];
-function tint(id: string) {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
-  return AV[h % AV.length];
-}
-function initials(name: string) {
-  return name.split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase() ?? '').join('');
-}
 
 export default function WorkspacesModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { orderedWorkspaces, current, setCurrent, reload } = useWorkspace();
@@ -77,12 +68,7 @@ export default function WorkspacesModal({ open, onClose }: { open: boolean; onCl
                 w.id === current?.id && 'bg-[var(--accent-soft)]',
               )}
             >
-              <span
-                className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-xs font-bold text-white"
-                style={{ background: tint(w.id) }}
-              >
-                {initials(w.name)}
-              </span>
+              <Avatar id={w.id} name={w.name} src={w.imageUrl} square size={36} />
               <span className="min-w-0 flex-1 truncate text-sm font-semibold">{w.name}</span>
               {w.id === current?.id && <IconTick className="h-4 w-4 text-[var(--accent)]" />}
             </button>

@@ -8,6 +8,8 @@ import { IconAnalytics, IconAdd, IconClose, IconNext } from '@/lib/icons';
 import ViewToggle, { useViewMode } from '@/components/ViewToggle';
 import EmptyState from '@/components/EmptyState';
 import Pagination, { usePagination } from '@/components/Pagination';
+import PageHeader from '@/components/PageHeader';
+import WorkspaceTag, { WorkspacePicker } from '@/components/WorkspaceTag';
 
 const AV = ['#0cae36', '#2563eb', '#d946ef', '#f59e0b', '#ef4444', '#14b8a6', '#8b5cf6', '#ec4899'];
 const tint = (id: string) => {
@@ -17,24 +19,25 @@ const tint = (id: string) => {
 };
 
 export default function Meal() {
-  const { current } = useWorkspace();
+  const { workspaces, personal } = useWorkspace();
   const qc = useQueryClient();
   const [form, setForm] = useState({ name: '', code: '', donor: '' });
+  const [wsId, setWsId] = useState('');
   const [view, setView] = useViewMode('meal');
   const [addOpen, setAddOpen] = useState(false);
+  const targetWs = wsId || personal?.id || workspaces[0]?.id;
 
   const projects = useQuery({
-    queryKey: ['projects', current?.id],
-    enabled: !!current,
-    queryFn: async () => (await api.get<Project[]>('/meal/projects', { params: { workspaceId: current!.id } })).data,
+    queryKey: ['projects', 'all'],
+    queryFn: async () => (await api.get<Project[]>('/meal/projects')).data,
   });
 
   const create = useMutation({
-    mutationFn: async () => (await api.post('/meal/projects', { workspaceId: current!.id, ...form })).data,
+    mutationFn: async () => (await api.post('/meal/projects', { workspaceId: targetWs, ...form })).data,
     onSuccess: () => {
       setForm({ name: '', code: '', donor: '' });
       setAddOpen(false);
-      qc.invalidateQueries({ queryKey: ['projects', current?.id] });
+      qc.invalidateQueries({ queryKey: ['projects', 'all'] });
     },
   });
 
@@ -47,23 +50,16 @@ export default function Meal() {
   const pg = usePagination(list, 12, view);
 
   return (
-    <div className="page max-w-8xl space-y-5">
-      {/* En-tete */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="page-title">
-            <IconAnalytics className="h-6 w-6 text-[var(--accent)]" /> MEAL
-          </h1>
-          <p className="mt-0.5 text-sm text-[var(--text-dim)]">
-            Suivi, evaluation, redevabilite &amp; apprentissage : cadre logique, indicateurs et releves de mesures.
-          </p>
-        </div>
+    <div className="flex h-full flex-col">
+      <PageHeader icon={<IconAnalytics className="h-6 w-6 shrink-0 text-[var(--accent)]" />} title="MEAL">
         <button className="btn-primary" onClick={() => setAddOpen((v) => !v)}>
           {addOpen ? <IconClose className="h-5 w-5" /> : <IconAdd className="h-5 w-5" />}
-          {addOpen ? 'Fermer' : 'Nouveau projet'}
+          <span className="hidden sm:inline">{addOpen ? 'Fermer' : 'Nouveau projet'}</span>
         </button>
-      </div>
+      </PageHeader>
 
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="page max-w-8xl space-y-5">
       {addOpen && (
         <form onSubmit={submit} className="card grid gap-3 sm:grid-cols-4">
           <label className="sm:col-span-2">
@@ -71,7 +67,7 @@ export default function Meal() {
             <input
               autoFocus
               className="input"
-              placeholder="Ex : Acces a l'eau — District Nord"
+              placeholder="Ex : Accès à l'eau — District Nord"
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
             />
@@ -94,8 +90,13 @@ export default function Meal() {
               onChange={(e) => setForm({ ...form, donor: e.target.value })}
             />
           </label>
+          <WorkspacePicker
+            value={targetWs ?? ''}
+            onChange={setWsId}
+            options={workspaces.map((w) => ({ id: w.id, name: w.name, isPersonal: w.isPersonal }))}
+          />
           <button className="btn-primary sm:col-span-4 sm:w-48" disabled={create.isPending || !form.name.trim()}>
-            <IconAdd className="h-5 w-5" /> Creer le projet
+            <IconAdd className="h-5 w-5" /> Créer le projet
           </button>
         </form>
       )}
@@ -110,7 +111,7 @@ export default function Meal() {
         <EmptyState
           icon={<IconAnalytics className="h-7 w-7" />}
           title="Aucun projet MEAL"
-          hint="Creez un projet pour definir son cadre logique et suivre ses indicateurs."
+          hint="Créez un projet pour définir son cadre logique et suivre ses indicateurs."
           action={
             <button className="btn-primary" onClick={() => setAddOpen(true)}>
               <IconAdd className="h-5 w-5" /> Nouveau projet
@@ -133,6 +134,7 @@ export default function Meal() {
                   {(p.code || p.name).slice(0, 2).toUpperCase()}
                 </span>
                 <span className="min-w-0 flex-1 truncate font-semibold item-title">{p.name}</span>
+                <WorkspaceTag ws={p.workspace} />
               </div>
               <div className="text-xs text-[var(--text-dim)]">
                 {p.code || '—'} {p.donor && `· ${p.donor}`}
@@ -161,6 +163,7 @@ export default function Meal() {
                 {(p.code || p.name).slice(0, 2).toUpperCase()}
               </span>
               <span className="min-w-0 flex-1 truncate font-medium item-title">{p.name}</span>
+              <WorkspaceTag ws={p.workspace} className="hidden sm:inline-flex" />
               <span className="hidden shrink-0 text-2xs text-[var(--text-dim)] sm:inline">
                 {p.code} {p.donor && `· ${p.donor}`}
               </span>
@@ -180,6 +183,8 @@ export default function Meal() {
         start={pg.start}
         end={pg.end}
       />
+        </div>
+      </div>
     </div>
   );
 }

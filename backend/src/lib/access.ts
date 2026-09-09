@@ -17,3 +17,30 @@ export async function requireWorkspaceAdmin(userId: string, workspaceId: string)
   }
   return member;
 }
+
+/** Ids de tous les espaces dont l'utilisateur est membre. */
+export async function myWorkspaceIds(userId: string): Promise<string[]> {
+  const rows = await prisma.workspaceMember.findMany({ where: { userId }, select: { workspaceId: true } });
+  return rows.map((r) => r.workspaceId);
+}
+
+/**
+ * Espace personnel de l'utilisateur (dépôt par défaut des Projets / MEAL / Collecte).
+ * Créé à la volée s'il n'existe pas encore.
+ */
+export async function getOrCreatePersonalWorkspace(userId: string) {
+  const existing = await prisma.workspace.findFirst({
+    where: { isPersonal: true, members: { some: { userId, role: 'OWNER' } } },
+  });
+  if (existing) return existing;
+  const rnd = Math.random().toString(36).slice(2, 8);
+  return prisma.workspace.create({
+    data: {
+      name: 'Personnel',
+      slug: `perso-${userId.slice(0, 6)}-${rnd}`,
+      isPersonal: true,
+      members: { create: { userId, role: 'OWNER' } },
+      channels: { create: { name: 'general', type: 'PUBLIC', topic: 'Notes personnelles' } },
+    },
+  });
+}

@@ -4,9 +4,25 @@ export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {
     extend: {
+      // Pile de polices WhatsApp (systeme, sans police web)
       fontFamily: {
-        sans: ['Inter', 'system-ui', '-apple-system', 'Segoe UI', 'sans-serif'],
-        display: ['"Inter Tight"', 'Inter', 'system-ui', 'sans-serif'],
+        sans: [
+          '"Segoe UI"',
+          'system-ui',
+          '-apple-system',
+          '"Helvetica Neue"',
+          'Helvetica',
+          '"Lucida Grande"',
+          'Roboto',
+          'Ubuntu',
+          'Cantarell',
+          '"Fira Sans"',
+          'Arial',
+          'sans-serif',
+          '"Apple Color Emoji"',
+          '"Segoe UI Emoji"',
+        ],
+        display: ['"Segoe UI"', 'system-ui', '"Helvetica Neue"', 'Helvetica', 'Arial', 'sans-serif'],
       },
       // Echelle typographique unique (taille / interlignage). Sert de reference a
       // tout le projet : plus de tailles arbitraires `text-[13px]` etc.
@@ -23,18 +39,18 @@ export default {
         '4xl': ['38px', '42px'],
       },
       colors: {
-        // Palette Talkio : bleu Telegram #3390EC (primaire) + violet #8774E1 (accent secondaire)
+        // Palette Talkio : rose #FF2C5F (primaire) + violet #8774E1 (accent secondaire)
         brand: {
-          50: '#eaf3fd',
-          100: '#d1e6fb',
-          200: '#a7cef6',
-          300: '#6fb0f0',
-          400: '#3390ec',
-          500: '#2f86dc',
-          600: '#2b7cd4',
-          700: '#2265b0',
-          800: '#1d5390',
-          900: '#1a4676',
+          50: '#fff0f3',
+          100: '#ffe0e7',
+          200: '#ffc2cf',
+          300: '#ff96ac',
+          400: '#ff5c81',
+          500: '#ff2c5f',
+          600: '#ed1450',
+          700: '#c80f42',
+          800: '#a5103c',
+          900: '#8a1338',
         },
         mint: '#8774e1',
       },

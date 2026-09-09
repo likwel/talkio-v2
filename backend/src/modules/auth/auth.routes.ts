@@ -46,6 +46,28 @@ router.post(
 );
 
 router.post(
+  '/forgot-password',
+  validate(z.object({ email: z.string().email() })),
+  asyncHandler(async (req, res) => {
+    res.json(await service.requestPasswordReset(req.body.email));
+  }),
+);
+
+router.post(
+  '/reset-password',
+  validate(
+    z.object({
+      token: z.string().min(10),
+      password: z.string().min(8, 'Le mot de passe doit contenir au moins 8 caracteres'),
+    }),
+  ),
+  asyncHandler(async (req, res) => {
+    await service.resetPassword(req.body.token, req.body.password);
+    res.status(204).end();
+  }),
+);
+
+router.post(
   '/logout',
   asyncHandler(async (req, res) => {
     const token = req.body?.refreshToken;
@@ -69,7 +91,14 @@ router.patch(
   validate(
     z.object({
       fullName: z.string().min(2).max(80).optional(),
-      avatarUrl: z.string().url().max(500).nullable().optional().or(z.literal('')),
+      // Accepte une URL absolue (http/https) OU un chemin relatif servi par
+      // l'API (ex : /api/uploads/files/xxx.png). Chaine vide = suppression.
+      avatarUrl: z
+        .string()
+        .max(500)
+        .refine((v) => v === '' || v.startsWith('/') || /^https?:\/\//i.test(v), 'URL invalide')
+        .nullable()
+        .optional(),
     }),
   ),
   asyncHandler(async (req, res) => {

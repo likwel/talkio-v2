@@ -7,6 +7,8 @@ import TopProgress, { RouteFallback } from '@/components/TopProgress';
 // Chargement paresseux : chaque page a son propre chunk.
 const Login = lazy(() => import('@/pages/Login'));
 const Register = lazy(() => import('@/pages/Register'));
+const ForgotPassword = lazy(() => import('@/pages/ForgotPassword'));
+const ResetPassword = lazy(() => import('@/pages/ResetPassword'));
 const Chat = lazy(() => import('@/pages/Chat'));
 const CalendarPage = lazy(() => import('@/pages/Calendar'));
 const CallRoom = lazy(() => import('@/pages/CallRoom'));
@@ -19,12 +21,14 @@ const FormBuilder = lazy(() => import('@/pages/FormBuilder'));
 const FormFill = lazy(() => import('@/pages/FormFill'));
 const FormResponses = lazy(() => import('@/pages/FormResponses'));
 const PublicFormFill = lazy(() => import('@/pages/PublicFormFill'));
+const Landing = lazy(() => import('@/pages/Landing'));
+const LegalPage = lazy(() => import('@/pages/LegalPage'));
 
 function Protected({ children }: { children: JSX.Element }) {
   const { user, loading } = useAuth();
   if (loading)
     return <div className="grid h-screen place-items-center text-[var(--text-dim)]">Chargement…</div>;
-  return user ? children : <Navigate to="/login" replace />;
+  return user ? children : <Navigate to="/welcome" replace />;
 }
 
 export default function App() {
@@ -35,6 +39,11 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/welcome" element={<Landing />} />
+          <Route path="/legal/:doc" element={<LegalPage />} />
+          <Route path="/contact" element={<LegalPage />} />
           <Route path="/f/:formId" element={<PublicFormFill />} />
           <Route path="/call/:roomId" element={<Protected><CallRoom /></Protected>} />
           <Route

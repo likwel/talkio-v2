@@ -6,17 +6,8 @@ import { api } from '@/lib/api';
 import { useWorkspace } from '@/context/WorkspaceContext';
 import { useAuth } from '@/context/AuthContext';
 import type { Channel, WorkspaceDetail } from '@/lib/types';
+import Avatar from '@/components/Avatar';
 import { IconSearch, IconTick, IconGroups } from '@/lib/icons';
-
-const AV = ['#0cae36', '#2563eb', '#d946ef', '#f59e0b', '#ef4444', '#14b8a6', '#8b5cf6', '#ec4899'];
-function tint(id: string) {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
-  return AV[h % AV.length];
-}
-function initials(name: string) {
-  return name.split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase() ?? '').join('');
-}
 
 export default function NewConversationModal({
   open,
@@ -136,12 +127,7 @@ export default function NewConversationModal({
                   on ? 'bg-[var(--accent-soft)]' : 'hover:bg-black/5 dark:hover:bg-white/5',
                 )}
               >
-                <span
-                  className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-xs font-bold text-white"
-                  style={{ background: tint(m.id) }}
-                >
-                  {initials(m.fullName)}
-                </span>
+                <Avatar id={m.id} name={m.fullName} src={m.avatarUrl} size={32} />
                 <span className="min-w-0 flex-1 truncate text-sm font-medium">{m.fullName}</span>
                 <span
                   className={clsx(

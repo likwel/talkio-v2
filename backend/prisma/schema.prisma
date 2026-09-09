@@ -25,36 +25,51 @@ model User {
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
-  refreshTokens     RefreshToken[]
-  memberships       WorkspaceMember[]
-  channelMemberships ChannelMember[]
-  messages          Message[]
-  callParticipants  CallParticipant[]
-  createdCalls      Call[]            @relation("CallCreatedBy")
-  assignedCards     CardAssignee[]
-  comments          Comment[]
-  measurements      MealMeasurement[]
-  formResponses     FormResponse[]
-  createdForms      Form[]           @relation("FormCreatedBy")
-  createdProjects   Project[]        @relation("ProjectCreatedBy")
-  calendars         Calendar[]
-  createdEvents     CalendarEvent[]  @relation("EventCreatedBy")
-  eventAttendances  EventAttendee[]
-  friendRequestsSent     Friendship[] @relation("FriendRequester")
-  friendRequestsReceived Friendship[] @relation("FriendAddressee")
-  ledBoards         Board[]      @relation("BoardLead")
-  boardMemberships  BoardMember[]
-  createdAutomations Automation[] @relation("AutomationCreatedBy")
+  refreshTokens          RefreshToken[]
+  passwordResetTokens    PasswordResetToken[]
+  memberships            WorkspaceMember[]
+  channelMemberships     ChannelMember[]
+  messages               Message[]
+  callParticipants       CallParticipant[]
+  createdCalls           Call[]               @relation("CallCreatedBy")
+  assignedCards          CardAssignee[]
+  comments               Comment[]
+  measurements           MealMeasurement[]
+  formResponses          FormResponse[]       @relation("FormResponseSubmitter")
+  reviewedFormResponses  FormResponse[]       @relation("FormResponseReviewer")
+  createdForms           Form[]               @relation("FormCreatedBy")
+  createdProjects        Project[]            @relation("ProjectCreatedBy")
+  calendars              Calendar[]
+  createdEvents          CalendarEvent[]      @relation("EventCreatedBy")
+  eventAttendances       EventAttendee[]
+  friendRequestsSent     Friendship[]         @relation("FriendRequester")
+  friendRequestsReceived Friendship[]         @relation("FriendAddressee")
+  ledBoards              Board[]              @relation("BoardLead")
+  boardMemberships       BoardMember[]
+  createdAutomations     Automation[]         @relation("AutomationCreatedBy")
+  createdChannels        Channel[]            @relation("ChannelCreatedBy")
 }
 
 model RefreshToken {
-  id        String   @id @default(cuid())
-  token     String   @unique
+  id        String    @id @default(cuid())
+  token     String    @unique
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   expiresAt DateTime
   revokedAt DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
 
   @@index([userId])
 }
@@ -69,6 +84,7 @@ enum WorkspaceRole {
   MEMBER
   GUEST
 }
+
 enum PresenceStatus {
   ONLINE
   AWAY
@@ -81,6 +97,11 @@ model Workspace {
   name      String
   slug      String   @unique
   color     String?
+  /// Photo de l'espace (URL servie par /api/uploads/files). null = pastille initiales.
+  imageUrl  String?
+  /// Espace personnel implicite : dépôt par défaut des Projets / MEAL / Collecte,
+  /// jamais listé dans le sélecteur d'espaces de la messagerie.
+  isPersonal Boolean @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -118,15 +139,22 @@ enum ChannelType {
 }
 
 model Channel {
-  id          String      @id @default(cuid())
-  workspaceId String
-  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  name        String?
-  topic       String?
-  color       String?
-  type        ChannelType @default(PUBLIC)
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  id           String      @id @default(cuid())
+  workspaceId  String
+  workspace    Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name         String?
+  topic        String?
+  color        String?
+  /// Fond de la conversation (identifiant de preset, ex : "sky"). null = defaut.
+  wallpaper    String?
+  /// Accuses de lecture (vu / lu) actifs pour cette conversation.
+  readReceipts Boolean     @default(true)
+  /// Createur de la conversation : seul a pouvoir changer certains reglages.
+  createdById  String?
+  creator      User?       @relation("ChannelCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  type         ChannelType @default(PUBLIC)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 
   members  ChannelMember[]
   messages Message[]
@@ -136,14 +164,18 @@ model Channel {
 }
 
 model ChannelMember {
-  id            String   @id @default(cuid())
-  channelId     String
-  channel       Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  userId        String
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  lastReadAt    DateTime?
-  isAdmin       Boolean  @default(false)
-  createdAt     DateTime @default(now())
+  id         String    @id @default(cuid())
+  channelId  String
+  channel    Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lastReadAt DateTime?
+  isAdmin    Boolean   @default(false)
+  /// Permissions par salon (surcharges ; absence de ligne = tout autorisé).
+  canView    Boolean   @default(true)
+  canRead    Boolean   @default(true)
+  canWrite   Boolean   @default(true)
+  createdAt  DateTime  @default(now())
 
   @@unique([channelId, userId])
   @@index([userId])
@@ -155,23 +187,23 @@ enum MessageKind {
 }
 
 model Message {
-  id        String      @id @default(cuid())
-  channelId String
-  channel   Channel     @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  authorId  String
-  author    User        @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  body      String
-  kind      MessageKind @default(TEXT)
+  id            String      @id @default(cuid())
+  channelId     String
+  channel       Channel     @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  authorId      String
+  author        User        @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  body          String
+  kind          MessageKind @default(TEXT)
   /// Appel associe pour les messages de type CALL (historique d'appel / visio).
-  callId    String?
-  call      Call?       @relation(fields: [callId], references: [id], onDelete: SetNull)
-  parentId  String?
-  parent    Message?    @relation("MessageThread", fields: [parentId], references: [id], onDelete: Cascade)
-  replies   Message[]   @relation("MessageThread")
+  callId        String?
+  call          Call?       @relation(fields: [callId], references: [id], onDelete: SetNull)
+  parentId      String?
+  parent        Message?    @relation("MessageThread", fields: [parentId], references: [id], onDelete: Cascade)
+  replies       Message[]   @relation("MessageThread")
   /// Nom de l'auteur d'origine quand le message a ete transfere (repost).
   forwardedFrom String?
-  editedAt  DateTime?
-  createdAt DateTime    @default(now())
+  editedAt      DateTime?
+  createdAt     DateTime    @default(now())
 
   attachments Attachment[]
 
@@ -376,19 +408,19 @@ enum LogframeLevel {
 }
 
 model MealIndicator {
-  id           String        @id @default(cuid())
-  projectId    String
-  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  code         String
-  name         String
-  level        LogframeLevel @default(OUTCOME)
-  unit         String?
-  baseline     Float?
-  target       Float?
-  disaggregation String[]    @default([])
+  id                  String        @id @default(cuid())
+  projectId           String
+  project             Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  code                String
+  name                String
+  level               LogframeLevel @default(OUTCOME)
+  unit                String?
+  baseline            Float?
+  target              Float?
+  disaggregation      String[]      @default([])
   meansOfVerification String?
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
 
   measurements MealMeasurement[]
 
@@ -397,18 +429,18 @@ model MealIndicator {
 }
 
 model MealMeasurement {
-  id          String        @id @default(cuid())
-  indicatorId String
-  indicator   MealIndicator @relation(fields: [indicatorId], references: [id], onDelete: Cascade)
-  value       Float
-  periodStart DateTime
-  periodEnd   DateTime
-  location    String?
-  note        String?
-  dimensions  Json?
+  id           String        @id @default(cuid())
+  indicatorId  String
+  indicator    MealIndicator @relation(fields: [indicatorId], references: [id], onDelete: Cascade)
+  value        Float
+  periodStart  DateTime
+  periodEnd    DateTime
+  location     String?
+  note         String?
+  dimensions   Json?
   recordedById String
-  recordedBy  User          @relation(fields: [recordedById], references: [id], onDelete: Cascade)
-  createdAt   DateTime      @default(now())
+  recordedBy   User          @relation(fields: [recordedById], references: [id], onDelete: Cascade)
+  createdAt    DateTime      @default(now())
 
   @@index([indicatorId, periodStart])
 }
@@ -427,12 +459,33 @@ enum FieldType {
   TEXT
   TEXTAREA
   NUMBER
+  INTEGER
+  DECIMAL
   DATE
+  DATETIME
+  TIME
+  EMAIL
+  PHONE
+  URL
+  RATING
+  RANGE
   SELECT
   MULTISELECT
   BOOLEAN
+  ACKNOWLEDGE
+  NOTE
+  BARCODE
+  SIGNATURE
   GEOPOINT
   PHOTO
+}
+
+/// Statut de validation d'une soumission (revue qualité, façon Kobo).
+enum ReviewState {
+  PENDING
+  APPROVED
+  REJECTED
+  FLAGGED
 }
 
 model Form {
@@ -444,53 +497,115 @@ model Form {
   title       String
   description String?
   status      FormStatus @default(DRAFT)
+  /// Numéro de version, incrémenté à chaque (re)publication.
+  version     Int        @default(1)
+  /// Autoriser plusieurs soumissions depuis le même appareil.
+  allowMultiple Boolean  @default(true)
+  /// Exiger un compte pour répondre (désactive le lien public anonyme).
+  requireLogin  Boolean  @default(false)
+  /// Code court (5 caractères) pour le lien public /f/<code>.
+  publicCode  String?    @unique
   createdById String
   createdBy   User       @relation("FormCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
+  sections  FormSection[]
   fields    FormField[]
   responses FormResponse[]
 
   @@index([workspaceId])
 }
 
+/// Section / groupe de questions (façon groupe ODK). Une section « repeatable »
+/// collecte N entrées d'un sous-formulaire (façon `repeat` XLSForm).
+model FormSection {
+  id            String       @id @default(cuid())
+  formId        String
+  form          Form         @relation(fields: [formId], references: [id], onDelete: Cascade)
+  key           String
+  title         String
+  description   String?
+  position      Int          @default(0)
+  repeatable    Boolean      @default(false)
+  repeatLabel   String?
+  minRepeat     Int?
+  maxRepeat     Int?
+  /// N'afficher la section que si <relevantField> <op> <value>.
+  relevantField String?
+  relevantOp    String?
+  relevantValue String?
+
+  fields FormField[]
+
+  @@unique([formId, key])
+  @@index([formId])
+}
+
 model FormField {
-  id           String    @id @default(cuid())
+  id           String       @id @default(cuid())
   formId       String
-  form         Form      @relation(fields: [formId], references: [id], onDelete: Cascade)
+  form         Form         @relation(fields: [formId], references: [id], onDelete: Cascade)
+  sectionId    String?
+  section      FormSection? @relation(fields: [sectionId], references: [id], onDelete: SetNull)
   label        String
   key          String
-  type         FieldType @default(TEXT)
-  required     Boolean   @default(false)
-  position     Int       @default(0)
-  options      String[]  @default([])
+  type         FieldType    @default(TEXT)
+  required     Boolean      @default(false)
+  position     Int          @default(0)
+  options      String[]     @default([])
   helpText     String?
   placeholder  String?
   defaultValue String?
   minValue     Float?
   maxValue     Float?
   pattern      String?
+  /// Skip logic : n'afficher le champ que si <relevantField> <op> <value>.
+  relevantField     String?
+  relevantOp        String?
+  relevantValue     String?
+  /// Contrainte de validation (expression, `.` = valeur du champ) + message.
+  constraintExpr    String?
+  constraintMessage String?
+  /// Expression calculée (champ en lecture seule), ex. `{poids} / ({taille} * {taille})`.
+  calculation       String?
+  /// Indice de rendu (minimal, columns, likert…).
+  appearance        String?
+  rangeStep         Float?
 
   answers FormAnswer[]
 
   @@unique([formId, key])
   @@index([formId])
+  @@index([sectionId])
 }
 
 model FormResponse {
-  id           String   @id @default(cuid())
-  formId       String
-  form         Form     @relation(fields: [formId], references: [id], onDelete: Cascade)
+  id            String      @id @default(cuid())
+  formId        String
+  form          Form        @relation(fields: [formId], references: [id], onDelete: Cascade)
   submittedById String?
-  submittedBy  User?    @relation(fields: [submittedById], references: [id], onDelete: SetNull)
-  submittedAt  DateTime @default(now())
-  latitude     Float?
-  longitude    Float?
+  submittedBy   User?       @relation("FormResponseSubmitter", fields: [submittedById], references: [id], onDelete: SetNull)
+  /// E-mail du participant (obligatoire sur le lien public).
+  email         String?
+  submittedAt   DateTime    @default(now())
+  latitude      Float?
+  longitude     Float?
+  /// Version du formulaire au moment de la saisie.
+  formVersion   Int         @default(1)
+  /// Identifiant d'appareil (déduplication / traçabilité terrain).
+  deviceId      String?
+  /// Revue qualité (façon Kobo).
+  reviewState   ReviewState @default(PENDING)
+  reviewNote    String?
+  reviewedById  String?
+  reviewedBy    User?       @relation("FormResponseReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedAt    DateTime?
 
   answers FormAnswer[]
 
   @@index([formId, submittedAt])
+  @@index([formId, reviewState])
 }
 
 model FormAnswer {
@@ -500,8 +615,10 @@ model FormAnswer {
   fieldId    String
   field      FormField    @relation(fields: [fieldId], references: [id], onDelete: Cascade)
   value      Json
+  /// Indice d'itération pour les champs d'une section répétable (0 sinon).
+  groupIndex Int          @default(0)
 
-  @@unique([responseId, fieldId])
+  @@unique([responseId, fieldId, groupIndex])
 }
 
 // ---------------------------------------------------------------------------
@@ -509,17 +626,17 @@ model FormAnswer {
 // ---------------------------------------------------------------------------
 
 model Calendar {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   workspaceId String
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   ownerId     String
-  owner       User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  owner       User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   name        String
-  color       String   @default("#0cae36")
-  isDefault   Boolean  @default(false)
-  isVisible   Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  color       String    @default("#ff2c5f")
+  isDefault   Boolean   @default(false)
+  isVisible   Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   events CalendarEvent[]
 
@@ -597,21 +714,21 @@ model Friendship {
 // ---------------------------------------------------------------------------
 
 model Automation {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   workspaceId   String
   workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   name          String
-  enabled       Boolean  @default(true)
-  triggerType   String   // form.response.created | card.moved.done | meal.measurement.created | message.keyword
-  triggerConfig Json     @default("{}")
-  actionType    String   // message.post | card.create
-  actionConfig  Json     @default("{}")
+  enabled       Boolean   @default(true)
+  triggerType   String // form.response.created | card.moved.done | meal.measurement.created | message.keyword
+  triggerConfig Json      @default("{}")
+  actionType    String // message.post | card.create
+  actionConfig  Json      @default("{}")
   lastRunAt     DateTime?
-  runCount      Int      @default(0)
+  runCount      Int       @default(0)
   createdById   String
-  createdBy     User     @relation("AutomationCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdBy     User      @relation("AutomationCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   @@index([workspaceId, enabled])
 }

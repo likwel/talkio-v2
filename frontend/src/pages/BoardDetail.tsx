@@ -5,14 +5,14 @@ import clsx from 'clsx';
 import { api } from '@/lib/api';
 import { getSocket } from '@/lib/socket';
 import Modal from '@/components/Modal';
-import ColorPicker from '@/components/ColorPicker';
 import Select from '@/components/Select';
 import Pagination, { usePagination } from '@/components/Pagination';
-import { useWorkspace } from '@/context/WorkspaceContext';
 import { useProfile } from '@/context/ProfileContext';
 import { useDialog } from '@/context/DialogContext';
 import type { Board, BoardStatus, Card, User, WorkspaceDetail } from '@/lib/types';
-import { STATUS_LABEL, ProgressBar, tint, initials } from '@/pages/Boards';
+import { STATUS_LABEL, ProgressBar } from '@/pages/Boards';
+import Avatar from '@/components/Avatar';
+import BoardSettingsModal from '@/components/BoardSettingsModal';
 import {
   IconComment,
   IconBack,
@@ -134,7 +134,7 @@ export default function BoardDetail() {
                 <IconForms className="h-4 w-4" /> Liste
               </button>
             </div>
-            <button className="icon-btn ml-auto sm:ml-0" title="Parametres du projet" onClick={() => setSettingsOpen(true)}>
+            <button className="icon-btn ml-auto sm:ml-0" title="Paramètres du projet" onClick={() => setSettingsOpen(true)}>
               <IconSettings className="h-5 w-5" />
             </button>
           </div>
@@ -149,27 +149,17 @@ export default function BoardDetail() {
           )}
           {b.lead && (
             <span className="flex items-center gap-1">
-              <span
-                className="grid h-5 w-5 place-items-center rounded-full text-2xs font-bold text-white"
-                style={{ background: tint(b.lead.id) }}
-              >
-                {initials(b.lead.fullName)}
-              </span>
-              Chef : {b.lead.fullName}
+              <Avatar id={b.lead.id} name={b.lead.fullName} src={b.lead.avatarUrl} size={20} />
+              Chef de projet : {b.lead.fullName}
             </span>
           )}
           {b.members && b.members.length > 0 && (
             <span className="flex items-center">
-              <span className="mr-1">Equipe :</span>
+              <span className="mr-1">Équipe :</span>
               <span className="flex -space-x-1.5">
                 {b.members.slice(0, 6).map((m) => (
-                  <span
-                    key={m.user.id}
-                    title={m.user.fullName}
-                    className="grid h-5 w-5 place-items-center rounded-full text-2xs font-bold text-white ring-2 ring-[var(--surface)]"
-                    style={{ background: tint(m.user.id) }}
-                  >
-                    {initials(m.user.fullName)}
+                  <span key={m.user.id} title={m.user.fullName} className="rounded-full ring-2 ring-[var(--surface)]">
+                    <Avatar id={m.user.id} name={m.user.fullName} src={m.user.avatarUrl} size={20} />
                   </span>
                 ))}
               </span>
@@ -227,11 +217,11 @@ export default function BoardDetail() {
             <table className="w-full min-w-[640px] text-sm">
               <thead className="bg-[var(--surface-2)] text-left text-xs text-[var(--text-dim)]">
                 <tr>
-                  <th className="px-3 py-2 font-semibold">Tache</th>
+                  <th className="px-3 py-2 font-semibold">Tâche</th>
                   <th className="px-3 py-2 font-semibold">Colonne</th>
-                  <th className="px-3 py-2 font-semibold">Priorite</th>
-                  <th className="px-3 py-2 font-semibold">Echeance</th>
-                  <th className="px-3 py-2 font-semibold">Assignes</th>
+                  <th className="px-3 py-2 font-semibold">Priorité</th>
+                  <th className="px-3 py-2 font-semibold">Échéance</th>
+                  <th className="px-3 py-2 font-semibold">Assigné·es</th>
                 </tr>
               </thead>
               <tbody>
@@ -245,7 +235,7 @@ export default function BoardDetail() {
                     <td className="px-3 py-2 text-[var(--text-dim)]">{c.columnName}</td>
                     <td className="px-3 py-2">
                       <span className={clsx('rounded-md px-1.5 py-0.5 text-2xs font-semibold', PRIORITY_STYLE[c.priority])}>
-                        {c.priority}
+                        {PRIORITY_LABEL[c.priority]}
                       </span>
                     </td>
                     <td className={clsx('px-3 py-2', isOverdue(c.dueDate) && 'font-semibold text-red-600')}>
@@ -254,13 +244,8 @@ export default function BoardDetail() {
                     <td className="px-3 py-2">
                       <span className="flex -space-x-1.5">
                         {(c.assignees ?? []).map((a) => (
-                          <span
-                            key={a.user.id}
-                            title={a.user.fullName}
-                            className="grid h-6 w-6 place-items-center rounded-full text-2xs font-bold text-white ring-2 ring-[var(--surface)]"
-                            style={{ background: tint(a.user.id) }}
-                          >
-                            {initials(a.user.fullName)}
+                          <span key={a.user.id} title={a.user.fullName} className="rounded-full ring-2 ring-[var(--surface)]">
+                            <Avatar id={a.user.id} name={a.user.fullName} src={a.user.avatarUrl} size={24} />
                           </span>
                         ))}
                       </span>
@@ -270,7 +255,7 @@ export default function BoardDetail() {
                 {allCards.length === 0 && (
                   <tr>
                     <td colSpan={5} className="px-3 py-8 text-center text-[var(--text-dim)]">
-                      Aucune tache.
+                      Aucune tâche.
                     </td>
                   </tr>
                 )}
@@ -290,163 +275,13 @@ export default function BoardDetail() {
 
       <BoardSettingsModal board={b} open={settingsOpen} onClose={() => setSettingsOpen(false)} onChanged={() => board.refetch()} />
       <CardModal
+        workspaceId={b.workspaceId}
         card={openCard}
         boardMembers={b.members ?? []}
         onClose={() => setOpenCard(null)}
         onChanged={() => board.refetch()}
       />
     </div>
-  );
-}
-
-function BoardSettingsModal({
-  board,
-  open,
-  onClose,
-  onChanged,
-}: {
-  board: Board;
-  open: boolean;
-  onClose: () => void;
-  onChanged: () => void;
-}) {
-  const { current } = useWorkspace();
-  const { openProfile } = useProfile();
-  const [name, setName] = useState(board.name);
-  const [description, setDescription] = useState(board.description ?? '');
-  const [color, setColor] = useState<string | null>(board.color ?? null);
-  const [leadId, setLeadId] = useState(board.leadId ?? '');
-  const [start, setStart] = useState(board.startDate?.slice(0, 10) ?? '');
-  const [end, setEnd] = useState(board.endDate?.slice(0, 10) ?? '');
-
-  useEffect(() => {
-    if (open) {
-      setName(board.name);
-      setDescription(board.description ?? '');
-      setColor(board.color ?? null);
-      setLeadId(board.leadId ?? '');
-      setStart(board.startDate?.slice(0, 10) ?? '');
-      setEnd(board.endDate?.slice(0, 10) ?? '');
-    }
-  }, [open, board]);
-
-  const wsDetail = useQuery({
-    queryKey: ['workspace', current?.id],
-    enabled: open && !!current,
-    queryFn: async () => (await api.get<WorkspaceDetail>(`/workspaces/${current!.id}`)).data,
-  });
-  const memberIds = new Set((board.members ?? []).map((m) => m.user.id));
-
-  async function save() {
-    await api.patch(`/boards/${board.id}`, {
-      name: name.trim(),
-      description: description.trim() || null,
-      color,
-      leadId: leadId || null,
-      startDate: start || null,
-      endDate: end || null,
-    });
-    onChanged();
-    onClose();
-  }
-  async function addMember(uid: string) {
-    await api.post(`/boards/${board.id}/members`, { userIds: [uid] });
-    onChanged();
-  }
-  async function removeMember(uid: string) {
-    await api.delete(`/boards/${board.id}/members/${uid}`);
-    onChanged();
-  }
-
-  return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="Parametres du projet"
-      footer={
-        <>
-          <button className="btn-text" onClick={onClose}>
-            Fermer
-          </button>
-          <button className="btn-primary" onClick={save}>
-            Enregistrer
-          </button>
-        </>
-      }
-    >
-      <div className="space-y-4">
-        <label className="block">
-          <span className="mb-1 block text-xs font-semibold text-[var(--text-dim)]">Nom</span>
-          <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
-        </label>
-        <label className="block">
-          <span className="mb-1 block text-xs font-semibold text-[var(--text-dim)]">Description</span>
-          <textarea className="input" rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
-        </label>
-        <div className="grid grid-cols-2 gap-3">
-          <label className="block">
-            <span className="mb-1 block text-xs font-semibold text-[var(--text-dim)]">Debut</span>
-            <input className="input" type="date" value={start} onChange={(e) => setStart(e.target.value)} />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-xs font-semibold text-[var(--text-dim)]">Echeance</span>
-            <input className="input" type="date" value={end} onChange={(e) => setEnd(e.target.value)} />
-          </label>
-        </div>
-        <label className="block">
-          <span className="mb-1 block text-xs font-semibold text-[var(--text-dim)]">Chef de projet</span>
-          <Select
-            value={leadId}
-            onChange={setLeadId}
-            options={[
-              { value: '', label: 'Aucun' },
-              ...(wsDetail.data?.members ?? []).map((m) => ({ value: m.user.id, label: m.user.fullName })),
-            ]}
-          />
-        </label>
-        <div>
-          <span className="mb-1.5 block text-xs font-semibold text-[var(--text-dim)]">Couleur</span>
-          <ColorPicker value={color} onChange={setColor} allowNone />
-        </div>
-
-        <div>
-          <div className="mb-1 text-xs font-bold uppercase tracking-wide text-[var(--text-dim)]">
-            Equipe ({board.members?.length ?? 0})
-          </div>
-          <ul className="mb-2 space-y-0.5">
-            {(board.members ?? []).map((m) => (
-              <li key={m.user.id} className="flex items-center gap-2 rounded-lg px-1.5 py-1 text-sm">
-                <button onClick={() => openProfile(m.user.id)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
-                  <span
-                    className="grid h-7 w-7 place-items-center rounded-full text-2xs font-bold text-white"
-                    style={{ background: tint(m.user.id) }}
-                  >
-                    {initials(m.user.fullName)}
-                  </span>
-                  <span className="truncate">{m.user.fullName}</span>
-                </button>
-                <button className="icon-btn-sm text-red-500" onClick={() => removeMember(m.user.id)} title="Retirer">
-                  <IconClose className="h-4 w-4" />
-                </button>
-              </li>
-            ))}
-          </ul>
-          <div className="max-h-32 overflow-y-auto rounded-lg border border-[var(--outline)]">
-            {wsDetail.data?.members
-              .filter((m) => !memberIds.has(m.user.id))
-              .map((m) => (
-                <button
-                  key={m.user.id}
-                  onClick={() => addMember(m.user.id)}
-                  className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-sm hover:bg-[var(--surface-2)]"
-                >
-                  <IconAdd className="h-4 w-4 text-[var(--text-dim)]" /> {m.user.fullName}
-                </button>
-              ))}
-          </div>
-        </div>
-      </div>
-    </Modal>
   );
 }
 
@@ -474,7 +309,7 @@ function CardItem({
       {card.description && <p className="mt-1 line-clamp-2 text-xs text-[var(--text-dim)]">{card.description}</p>}
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <span className={clsx('rounded-md px-1.5 py-0.5 text-2xs font-semibold', PRIORITY_STYLE[card.priority])}>
-          {card.priority}
+          {PRIORITY_LABEL[card.priority]}
         </span>
         {card.dueDate && (
           <span className={clsx('text-2xs', isOverdue(card.dueDate) ? 'font-semibold text-red-600' : 'text-[var(--text-dim)]')}>
@@ -488,13 +323,8 @@ function CardItem({
         )}
         <span className="ml-auto flex -space-x-1.5">
           {(card.assignees ?? []).slice(0, 3).map((a) => (
-            <span
-              key={a.user.id}
-              title={a.user.fullName}
-              className="grid h-5 w-5 place-items-center rounded-full text-2xs font-bold text-white ring-2 ring-[var(--surface)]"
-              style={{ background: tint(a.user.id) }}
-            >
-              {initials(a.user.fullName)}
+            <span key={a.user.id} title={a.user.fullName} className="rounded-full ring-2 ring-[var(--surface)]">
+              <Avatar id={a.user.id} name={a.user.fullName} src={a.user.avatarUrl} size={20} />
             </span>
           ))}
         </span>
@@ -528,7 +358,7 @@ function AddCard({ onAdd }: { onAdd: (title: string) => void }) {
         rows={2}
         value={value}
         onChange={(e) => setValue(e.target.value)}
-        placeholder="Titre de la carte"
+        placeholder="Titre de la tâche"
       />
       <div className="mt-2 flex gap-1">
         <button className="btn-primary btn-sm">Ajouter</button>
@@ -540,19 +370,20 @@ function AddCard({ onAdd }: { onAdd: (title: string) => void }) {
   );
 }
 
-/** Fiche d'une tache : titre, description, priorite, echeance et assignation de personnes. */
+/** Fiche d'une tâche : titre, description, priorité, échéance et assignation de personnes. */
 function CardModal({
   card,
   boardMembers,
+  workspaceId,
   onClose,
   onChanged,
 }: {
   card: Card | null;
   boardMembers: { user: Pick<User, 'id' | 'fullName' | 'avatarUrl'> }[];
+  workspaceId?: string;
   onClose: () => void;
   onChanged: () => void;
 }) {
-  const { current } = useWorkspace();
   const { openProfile } = useProfile();
   const dialog = useDialog();
   const [title, setTitle] = useState('');
@@ -576,9 +407,9 @@ function CardModal({
   }, [card]);
 
   const ws = useQuery({
-    queryKey: ['workspace', current?.id],
-    enabled: !!card && !!current,
-    queryFn: async () => (await api.get<WorkspaceDetail>(`/workspaces/${current!.id}`)).data,
+    queryKey: ['workspace', workspaceId],
+    enabled: !!card && !!workspaceId,
+    queryFn: async () => (await api.get<WorkspaceDetail>(`/workspaces/${workspaceId}`)).data,
   });
 
   const people = (ws.data?.members.map((m) => m.user) ?? boardMembers.map((m) => m.user)) as Pick<
@@ -619,7 +450,7 @@ function CardModal({
   async function removeCard() {
     if (!card) return;
     const ok = await dialog.confirm({
-      title: 'Supprimer la tache',
+      title: 'Supprimer la tâche',
       message: `« ${card.title} » sera definitivement supprimee.`,
       confirmLabel: 'Supprimer',
       danger: true,
@@ -638,7 +469,7 @@ function CardModal({
     <Modal
       open={!!card}
       onClose={onClose}
-      title="Tache"
+      title="Tâche"
       footer={
         <>
           <button className="btn-text btn-sm mr-auto text-red-600 hover:text-red-700" onClick={removeCard}>
@@ -669,7 +500,7 @@ function CardModal({
         </label>
         <div className="grid grid-cols-2 gap-3">
           <label className="block">
-            <span className="field-label">Priorite</span>
+            <span className="field-label">Priorité</span>
             <Select
               value={priority}
               onChange={(v) => setPriority(v as Card['priority'])}
@@ -680,7 +511,7 @@ function CardModal({
             />
           </label>
           <label className="block">
-            <span className="field-label">Echeance</span>
+            <span className="field-label">Échéance</span>
             <input
               className="input"
               type="date"
@@ -692,7 +523,7 @@ function CardModal({
 
         <div>
           <div className="mb-1.5 flex items-center justify-between">
-            <span className="field-label mb-0">Assignes ({assignees.length})</span>
+            <span className="field-label mb-0">Assigné·es ({assignees.length})</span>
             <button className="btn-text btn-sm" onClick={() => setPickerOpen((v) => !v)}>
               <IconAdd className="h-4 w-4" /> Assigner
             </button>
@@ -710,12 +541,7 @@ function CardModal({
                     className="flex items-center gap-1.5"
                     title="Voir le profil"
                   >
-                    <span
-                      className="grid h-6 w-6 place-items-center rounded-full text-2xs font-bold text-white"
-                      style={{ background: tint(a.user.id) }}
-                    >
-                      {initials(a.user.fullName)}
-                    </span>
+                    <Avatar id={a.user.id} name={a.user.fullName} src={a.user.avatarUrl} size={24} />
                     <span className="max-w-[140px] truncate">{a.user.fullName}</span>
                   </button>
                   <button
@@ -729,7 +555,7 @@ function CardModal({
               ))}
             </ul>
           ) : (
-            <p className="mb-2 text-xs text-[var(--text-dim)]">Personne n'est assigne a cette tache.</p>
+            <p className="mb-2 text-xs text-[var(--text-dim)]">Personne n'est assigné à cette tâche.</p>
           )}
 
           {pickerOpen && (
@@ -750,18 +576,13 @@ function CardModal({
                     onClick={() => toggleAssignee(u)}
                     className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-sm hover:bg-[var(--surface-2)]"
                   >
-                    <span
-                      className="grid h-6 w-6 place-items-center rounded-full text-2xs font-bold text-white"
-                      style={{ background: tint(u.id) }}
-                    >
-                      {initials(u.fullName)}
-                    </span>
+                    <Avatar id={u.id} name={u.fullName} src={u.avatarUrl} size={24} />
                     <span className="min-w-0 flex-1 truncate">{u.fullName}</span>
                     <IconAdd className="h-4 w-4 shrink-0 text-[var(--text-dim)]" />
                   </button>
                 ))}
                 {filtered.length === 0 && (
-                  <div className="p-2 text-xs text-[var(--text-dim)]">Aucune personne a ajouter</div>
+                  <div className="p-2 text-xs text-[var(--text-dim)]">Aucune personne à ajouter</div>
                 )}
               </div>
             </div>

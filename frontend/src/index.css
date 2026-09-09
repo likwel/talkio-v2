@@ -14,20 +14,20 @@
   --text: #16181c;
   --text-dim: #5b6572;
   --outline: #e6e8ec;
-  --accent: #3390ec;
-  --accent-soft: rgba(51, 144, 236, 0.13);
-  --accent-softer: rgba(51, 144, 236, 0.08);
-  --accent-strong: #2b7cd4;
-  --accent-ring: rgba(51, 144, 236, 0.28);
+  --accent: #ff2c5f;
+  --accent-soft: rgba(255, 44, 95, 0.13);
+  --accent-softer: rgba(255, 44, 95, 0.08);
+  --accent-strong: #cc234c;
+  --accent-ring: rgba(255, 44, 95, 0.28);
 
-  /* Messagerie (style Telegram) */
-  --chat-bg: #e5ebf1;
+  /* Messagerie (style WhatsApp) */
+  --chat-bg: #efeae2;
   --msg-in-bg: #ffffff;
-  --msg-in-text: var(--text);
-  --msg-out-bg: var(--accent);
-  --msg-out-text: #ffffff;
-  --msg-meta: rgba(91, 101, 114, 0.9);
-  --msg-meta-on: rgba(255, 255, 255, 0.85);
+  --msg-in-text: #111b21;
+  --msg-out-bg: #d9fdd3;
+  --msg-out-text: #111b21;
+  --msg-meta: rgba(17, 27, 33, 0.45);
+  --msg-meta-on: rgba(17, 27, 33, 0.45);
 }
 :root.dark {
   --bg: #0b0c0e;
@@ -38,13 +38,13 @@
   --text-dim: #9aa3af;
   --outline: #262a30;
 
-  --chat-bg: #0e1621;
-  --msg-in-bg: #1b2733;
-  --msg-in-text: var(--text);
-  --msg-out-bg: #2b5278;
-  --msg-out-text: #e9eef5;
-  --msg-meta: rgba(154, 163, 175, 0.9);
-  --msg-meta-on: rgba(233, 238, 245, 0.7);
+  --chat-bg: #0b141a;
+  --msg-in-bg: #202c33;
+  --msg-in-text: #e9edef;
+  --msg-out-bg: #005c4b;
+  --msg-out-text: #e9edef;
+  --msg-meta: rgba(233, 237, 239, 0.6);
+  --msg-meta-on: rgba(233, 237, 239, 0.6);
 }
 
 * {
@@ -196,6 +196,26 @@ body {
     background: var(--surface-2);
   }
 
+  /* --- Icones "relief" (leger effet 3D) pour la navigation laterale --- */
+  .icon-3d {
+    filter:
+      drop-shadow(0 -0.5px 0 rgba(255, 255, 255, 0.45))
+      drop-shadow(0 1px 1px rgba(0, 0, 0, 0.28))
+      drop-shadow(0 2px 4px rgba(0, 0, 0, 0.16));
+  }
+  :root.dark .icon-3d {
+    filter:
+      drop-shadow(0 -0.5px 0 rgba(255, 255, 255, 0.14))
+      drop-shadow(0 1px 1px rgba(0, 0, 0, 0.6))
+      drop-shadow(0 2px 5px rgba(0, 0, 0, 0.45));
+  }
+  .icon-3d-strong {
+    filter:
+      drop-shadow(0 -0.5px 0 rgba(255, 255, 255, 0.55))
+      drop-shadow(0 1px 0 rgba(0, 0, 0, 0.35))
+      drop-shadow(0 3px 5px rgba(0, 0, 0, 0.28));
+  }
+
   /* --- Barre d'onglets mobile --- */
   .bottom-nav {
     @apply z-30 flex h-14 shrink-0 items-stretch border-t border-[var(--outline)]
@@ -206,40 +226,54 @@ body {
            text-[var(--text-dim)] transition;
   }
 
-  /* --- Messagerie style Telegram --- */
+  /* --- Messagerie style WhatsApp --- */
   .chat-bg {
     background-color: var(--chat-bg);
-    background-image: radial-gradient(rgba(0, 0, 0, 0.035) 1px, transparent 1px);
-    background-size: 22px 22px;
+    background-image: radial-gradient(rgba(0, 0, 0, 0.04) 1px, transparent 1px);
+    background-size: 20px 20px;
   }
   :root.dark .chat-bg {
-    background-image: radial-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+    background-image: radial-gradient(rgba(255, 255, 255, 0.022) 1px, transparent 1px);
   }
   .msg-bubble {
-    @apply relative w-fit max-w-full rounded-2xl px-3 py-1.5 text-base leading-snug
-           shadow-[0_1px_1px_rgba(0,0,0,0.08)];
+    @apply relative w-fit rounded-[7.5px] text-[14px] leading-[19px]
+           shadow-[0_1px_0.5px_rgba(11,20,26,0.13)];
+    max-width: min(85%, 32rem);
+    padding: 6px 9px 8px 9px;
     overflow-wrap: anywhere;
     white-space: pre-wrap;
+  }
+  :root.dark .msg-bubble {
+    box-shadow: 0 1px 0.5px rgba(0, 0, 0, 0.2);
   }
   .msg-in {
     background: var(--msg-in-bg);
     color: var(--msg-in-text);
   }
   .msg-out {
-    @apply ml-auto;
     background: var(--msg-out-bg);
     color: var(--msg-out-text);
   }
+  /* Heure ancree en bas a droite de la bulle ; le texte lui laisse la place
+     grace au petit espaceur invisible sur la derniere ligne. */
   .msg-time {
-    @apply pointer-events-none float-right ml-2 mt-1 select-none text-[10px] leading-none;
+    @apply pointer-events-none absolute bottom-[4px] right-[8px] flex select-none
+           items-center gap-[3px] text-[11px] font-medium leading-none;
     color: var(--msg-meta);
+  }
+  .msg-time svg {
+    width: 15px;
+    height: 15px;
+    filter: none;
   }
   .msg-out .msg-time {
     color: var(--msg-meta-on);
   }
   .date-chip {
-    @apply mx-auto my-3 w-fit rounded-full bg-black/10 px-3 py-1 text-2xs font-semibold
-           text-[var(--text-dim)] dark:bg-white/10;
+    @apply mx-auto my-3 w-fit rounded-lg px-3 py-1 text-[12.5px] font-medium;
+    background: var(--msg-in-bg);
+    color: var(--msg-meta);
+    box-shadow: 0 1px 0.5px rgba(11, 20, 26, 0.13);
   }
 }
 

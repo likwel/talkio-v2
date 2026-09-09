@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { getSocket } from '@/lib/socket';
 import { useWorkspace } from '@/context/WorkspaceContext';
+import { useToast } from '@/context/ToastContext';
 
 interface Notify {
   channelId: string;
@@ -10,6 +11,8 @@ interface Notify {
   isDirect: boolean;
   from: { id: string; fullName: string };
   preview: string;
+  /** L'utilisateur courant a été mentionné (@) dans ce message. */
+  mention?: boolean;
 }
 
 // --- Son de message (WebAudio, sans asset) --------------------------------
@@ -49,6 +52,7 @@ function playPing() {
 export default function MessageNotifier() {
   const qc = useQueryClient();
   const { refreshList } = useWorkspace();
+  const { toast } = useToast();
   const location = useLocation();
 
   useEffect(() => {
@@ -64,12 +68,17 @@ export default function MessageNotifier() {
         (location.pathname === `/chat/${n.channelId}` ||
           (location.pathname === '/' && !n.isDirect));
       if (!inThisChannel) playPing();
+
+      // Mention explicite : le mentionné reçoit une notification visible.
+      if (n.mention && !inThisChannel) {
+        toast(`${n.from.fullName} vous a mentionné`, 'info');
+      }
     };
     socket.on('message:notify', onNotify);
     return () => {
       socket.off('message:notify', onNotify);
     };
-  }, [qc, refreshList, location.pathname]);
+  }, [qc, refreshList, toast, location.pathname]);
 
   return null;
 }

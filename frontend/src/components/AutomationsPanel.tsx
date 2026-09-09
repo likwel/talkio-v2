@@ -4,26 +4,29 @@ import clsx from 'clsx';
 import { api } from '@/lib/api';
 import { useWorkspace } from '@/context/WorkspaceContext';
 import { useDialog } from '@/context/DialogContext';
+import { useI18n } from '@/i18n';
 import type { Automation, Board, Channel } from '@/lib/types';
-import { IconAdd, IconClose, IconForward } from '@/lib/icons';
+import { IconAdd, IconClose, IconEdit, IconForward } from '@/lib/icons';
 import Select from '@/components/Select';
 
-const TRIGGERS: { id: Automation['triggerType']; label: string }[] = [
-  { id: 'form.response.created', label: 'Une reponse de formulaire est envoyee' },
-  { id: 'card.moved.done', label: 'Une tache passe en « Termine »' },
-  { id: 'meal.measurement.created', label: 'Une mesure MEAL est enregistree' },
-  { id: 'message.keyword', label: 'Un message contient un mot-cle' },
+const TRIGGER_IDS: Automation['triggerType'][] = [
+  'form.response.created',
+  'card.moved.done',
+  'card.created',
+  'meal.measurement.created',
+  'message.keyword',
+  'channel.created',
 ];
-const ACTIONS: { id: Automation['actionType']; label: string }[] = [
-  { id: 'message.post', label: 'Publier un message dans un salon' },
-  { id: 'card.create', label: 'Creer une tache dans un projet' },
-];
+const ACTION_IDS: Automation['actionType'][] = ['message.post', 'card.create', 'webhook.post'];
 
 export default function AutomationsPanel() {
   const { current } = useWorkspace();
+  const { t } = useI18n();
   const qc = useQueryClient();
   const dialog = useDialog();
   const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState<Automation | null>(null);
+  const formOpen = creating || !!editing;
 
   const list = useQuery({
     queryKey: ['automations', current?.id],
@@ -32,12 +35,12 @@ export default function AutomationsPanel() {
   });
   const channels = useQuery({
     queryKey: ['channels', current?.id],
-    enabled: !!current && creating,
+    enabled: !!current && formOpen,
     queryFn: async () => (await api.get<Channel[]>('/channels', { params: { workspaceId: current!.id } })).data,
   });
   const boards = useQuery({
     queryKey: ['boards-full', current?.id],
-    enabled: !!current && creating,
+    enabled: !!current && formOpen,
     queryFn: async () => {
       const bs = (await api.get<Board[]>('/boards', { params: { workspaceId: current!.id } })).data;
       const full = await Promise.all(bs.map((b) => api.get<Board>(`/boards/${b.id}`).then((r) => r.data)));
@@ -50,35 +53,52 @@ export default function AutomationsPanel() {
     qc.invalidateQueries({ queryKey: ['automations'] });
   }
   async function remove(a: Automation) {
-    const ok = await dialog.confirm({ title: 'Supprimer', message: `« ${a.name} » ?`, danger: true, confirmLabel: 'Supprimer' });
+    const ok = await dialog.confirm({
+      title: t('auto.deleteTitle'),
+      message: t('auto.deleteMsg', { name: a.name }),
+      danger: true,
+      confirmLabel: t('common.delete'),
+    });
     if (ok) {
       await api.delete(`/automations/${a.id}`);
       qc.invalidateQueries({ queryKey: ['automations'] });
     }
   }
 
+  function closeForm() {
+    setCreating(false);
+    setEditing(null);
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="font-display text-md font-bold">Automatisation</h3>
-          <p className="text-sm text-[var(--text-dim)]">
-            Reliez messagerie, projet, MEAL et collecte : quand un evenement se produit, une action est declenchee.
-          </p>
+          <h3 className="font-display text-md font-bold">{t('auto.title')}</h3>
+          <p className="text-sm text-[var(--text-dim)]">{t('auto.subtitle')}</p>
         </div>
-        <button className="btn-primary shrink-0" onClick={() => setCreating((v) => !v)}>
-          <IconAdd className="h-4 w-4" /> Regle
+        <button
+          className="btn-primary shrink-0"
+          onClick={() => {
+            setEditing(null);
+            setCreating((v) => !v);
+          }}
+        >
+          <IconAdd className="h-4 w-4" /> {t('auto.newRule')}
         </button>
       </div>
 
-      {creating && (
-        <CreateForm
+      {formOpen && (
+        <RuleForm
+          key={editing?.id ?? 'new'}
+          automation={editing}
           channels={channels.data ?? []}
           boards={boards.data ?? []}
           onDone={() => {
-            setCreating(false);
+            closeForm();
             qc.invalidateQueries({ queryKey: ['automations'] });
           }}
+          onCancel={closeForm}
         />
       )}
 
@@ -92,7 +112,7 @@ export default function AutomationsPanel() {
                   'relative h-5 w-9 shrink-0 rounded-full transition',
                   a.enabled ? 'bg-[var(--accent)]' : 'bg-[var(--outline)]',
                 )}
-                aria-label="Activer"
+                aria-label={t('common.confirm')}
               >
                 <span
                   className={clsx(
@@ -102,21 +122,31 @@ export default function AutomationsPanel() {
                 />
               </button>
               <span className="min-w-0 flex-1 truncate text-sm font-semibold">{a.name}</span>
-              <span className="text-2xs text-[var(--text-dim)]">{a.runCount}x</span>
-              <button className="icon-btn-sm text-red-500" onClick={() => remove(a)} title="Supprimer">
+              <span className="text-2xs text-[var(--text-dim)]">{t('auto.runs', { count: a.runCount })}</span>
+              <button
+                className="icon-btn-sm"
+                onClick={() => {
+                  setCreating(false);
+                  setEditing(a);
+                }}
+                title={t('common.edit')}
+              >
+                <IconEdit className="h-4 w-4" />
+              </button>
+              <button className="icon-btn-sm text-red-500" onClick={() => remove(a)} title={t('common.delete')}>
                 <IconClose className="h-4 w-4" />
               </button>
             </div>
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-[var(--text-dim)]">
-              <span className="chip">{TRIGGERS.find((t) => t.id === a.triggerType)?.label ?? a.triggerType}</span>
+              <span className="chip">{t(`auto.trigger.${a.triggerType}`)}</span>
               <IconForward className="h-3.5 w-3.5" />
-              <span className="chip">{ACTIONS.find((x) => x.id === a.actionType)?.label ?? a.actionType}</span>
+              <span className="chip">{t(`auto.action.${a.actionType}`)}</span>
             </div>
           </li>
         ))}
-        {list.data?.length === 0 && !creating && (
+        {list.data?.length === 0 && !formOpen && (
           <li className="rounded-xl border border-dashed border-[var(--outline)] py-6 text-center text-sm text-[var(--text-dim)]">
-            Aucune automatisation. Creez votre premiere regle.
+            {t('auto.empty')}
           </li>
         )}
       </ul>
@@ -124,23 +154,37 @@ export default function AutomationsPanel() {
   );
 }
 
-function CreateForm({
+function RuleForm({
+  automation,
   channels,
   boards,
   onDone,
+  onCancel,
 }: {
+  automation: Automation | null;
   channels: Channel[];
   boards: Board[];
   onDone: () => void;
+  onCancel: () => void;
 }) {
   const { current } = useWorkspace();
-  const [name, setName] = useState('');
-  const [triggerType, setTriggerType] = useState<Automation['triggerType']>('form.response.created');
-  const [keyword, setKeyword] = useState('');
-  const [actionType, setActionType] = useState<Automation['actionType']>('message.post');
-  const [channelId, setChannelId] = useState('');
-  const [columnId, setColumnId] = useState('');
-  const [template, setTemplate] = useState('{{summary}}');
+  const { t } = useI18n();
+  const isEdit = !!automation;
+
+  const [name, setName] = useState(automation?.name ?? '');
+  const [triggerType, setTriggerType] = useState<Automation['triggerType']>(
+    automation?.triggerType ?? 'form.response.created',
+  );
+  const [keyword, setKeyword] = useState(automation?.triggerConfig?.keyword ?? '');
+  const [actionType, setActionType] = useState<Automation['actionType']>(
+    automation?.actionType ?? 'message.post',
+  );
+  const [channelId, setChannelId] = useState(automation?.actionConfig?.channelId ?? '');
+  const [columnId, setColumnId] = useState(automation?.actionConfig?.columnId ?? '');
+  const [webhookUrl, setWebhookUrl] = useState(automation?.actionConfig?.url ?? '');
+  const [template, setTemplate] = useState(
+    automation?.actionConfig?.template ?? automation?.actionConfig?.titleTemplate ?? '{{summary}}',
+  );
   const [busy, setBusy] = useState(false);
 
   const columns = useMemo(
@@ -152,8 +196,7 @@ function CreateForm({
     if (!current || !name.trim()) return;
     setBusy(true);
     try {
-      await api.post('/automations', {
-        workspaceId: current.id,
+      const payload = {
         name: name.trim(),
         triggerType,
         triggerConfig: triggerType === 'message.keyword' ? { keyword: keyword.trim() } : {},
@@ -161,8 +204,15 @@ function CreateForm({
         actionConfig:
           actionType === 'message.post'
             ? { channelId, template }
-            : { columnId, titleTemplate: template },
-      });
+            : actionType === 'card.create'
+              ? { columnId, titleTemplate: template }
+              : { url: webhookUrl.trim(), template },
+      };
+      if (isEdit) {
+        await api.patch(`/automations/${automation!.id}`, payload);
+      } else {
+        await api.post('/automations', { workspaceId: current.id, ...payload });
+      }
       onDone();
     } finally {
       setBusy(false);
@@ -171,61 +221,91 @@ function CreateForm({
 
   return (
     <div className="space-y-3 rounded-xl border border-[var(--outline)] bg-[var(--surface-2)] p-3">
-      <input className="input" placeholder="Nom de la regle" value={name} onChange={(e) => setName(e.target.value)} />
+      {isEdit && (
+        <div className="text-xs font-bold uppercase tracking-wide text-[var(--text-dim)]">
+          {t('auto.form.editTitle')}
+        </div>
+      )}
+      <input
+        className="input"
+        placeholder={t('auto.form.namePlaceholder')}
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+      />
 
       <label className="block text-xs font-semibold text-[var(--text-dim)]">
-        Quand…
+        {t('auto.form.when')}
         <Select
           className="mt-1"
           value={triggerType}
-          onChange={(v) => setTriggerType(v as any)}
-          options={TRIGGERS.map((t) => ({ value: t.id, label: t.label }))}
+          onChange={(v) => setTriggerType(v as Automation['triggerType'])}
+          options={TRIGGER_IDS.map((id) => ({ value: id, label: t(`auto.trigger.${id}`) }))}
         />
       </label>
       {triggerType === 'message.keyword' && (
-        <input className="input" placeholder="Mot-cle (ex: #tache)" value={keyword} onChange={(e) => setKeyword(e.target.value)} />
+        <input
+          className="input"
+          placeholder={t('auto.form.keywordPlaceholder')}
+          value={keyword}
+          onChange={(e) => setKeyword(e.target.value)}
+        />
       )}
 
       <label className="block text-xs font-semibold text-[var(--text-dim)]">
-        Alors…
+        {t('auto.form.then')}
         <Select
           className="mt-1"
           value={actionType}
-          onChange={(v) => setActionType(v as any)}
-          options={ACTIONS.map((a) => ({ value: a.id, label: a.label }))}
+          onChange={(v) => setActionType(v as Automation['actionType'])}
+          options={ACTION_IDS.map((id) => ({ value: id, label: t(`auto.action.${id}`) }))}
         />
       </label>
 
-      {actionType === 'message.post' ? (
+      {actionType === 'message.post' && (
         <Select
           value={channelId}
           onChange={setChannelId}
-          placeholder="Choisir un salon…"
+          placeholder={t('auto.form.pickChannel')}
           options={channels
             .filter((c) => c.type !== 'DIRECT')
             .map((c) => ({ value: c.id, label: `# ${c.name}` }))}
         />
-      ) : (
+      )}
+      {actionType === 'card.create' && (
         <Select
           value={columnId}
           onChange={setColumnId}
-          placeholder="Choisir une colonne…"
+          placeholder={t('auto.form.pickColumn')}
           options={columns.map((c) => ({ value: c.id, label: c.label }))}
+        />
+      )}
+      {actionType === 'webhook.post' && (
+        <input
+          className="input"
+          type="url"
+          placeholder="https://exemple.com/webhook"
+          value={webhookUrl}
+          onChange={(e) => setWebhookUrl(e.target.value)}
         />
       )}
 
       <label className="block text-xs font-semibold text-[var(--text-dim)]">
-        {actionType === 'message.post' ? 'Message' : 'Titre de la tache'}
+        {actionType === 'message.post'
+          ? t('auto.form.message')
+          : actionType === 'card.create'
+            ? t('auto.form.cardTitle')
+            : t('auto.form.payload')}
         <input className="input mt-1" value={template} onChange={(e) => setTemplate(e.target.value)} />
         <span className="mt-1 block font-normal text-[var(--text-dim)]">
-          Jetons : <code>{'{{summary}}'}</code>, <code>{'{{author}}'}</code>, <code>{'{{form.title}}'}</code>,{' '}
-          <code>{'{{card.title}}'}</code>, <code>{'{{indicator.name}}'}</code>
+          {t('auto.form.tokens')} <code>{'{{summary}}'}</code>, <code>{'{{author}}'}</code>,{' '}
+          <code>{'{{form.title}}'}</code>, <code>{'{{card.title}}'}</code>,{' '}
+          <code>{'{{indicator.name}}'}</code>
         </span>
       </label>
 
       <div className="flex justify-end gap-2">
-        <button className="btn-text" onClick={onDone}>
-          Annuler
+        <button className="btn-text" onClick={onCancel}>
+          {t('common.cancel')}
         </button>
         <button
           className="btn-primary"
@@ -234,10 +314,11 @@ function CreateForm({
             busy ||
             !name.trim() ||
             (actionType === 'message.post' && !channelId) ||
-            (actionType === 'card.create' && !columnId)
+            (actionType === 'card.create' && !columnId) ||
+            (actionType === 'webhook.post' && !/^https?:\/\//i.test(webhookUrl.trim()))
           }
         >
-          Creer
+          {busy ? t('common.saving') : isEdit ? t('common.save') : t('common.create')}
         </button>
       </div>
     </div>

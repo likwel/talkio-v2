@@ -13,9 +13,20 @@ export interface Workspace {
   name: string;
   slug: string;
   color?: string | null;
+  imageUrl?: string | null;
+  /** Espace personnel implicite (dépôt par défaut Projet/MEAL/Collecte). */
+  isPersonal?: boolean;
   _count?: { members: number; channels: number; boards: number };
   /** Messages non lus cumules sur l'espace (badge du rail). */
   unreadCount?: number;
+}
+
+/** Rattachement d'espace affiché sur une carte Projet / MEAL / Collecte. */
+export interface WorkspaceRef {
+  id: string;
+  name: string;
+  color?: string | null;
+  isPersonal?: boolean;
 }
 
 export interface Channel {
@@ -24,11 +35,27 @@ export interface Channel {
   name: string | null;
   topic: string | null;
   color?: string | null;
+  /** Identifiant du fond de conversation (preset). null = defaut. */
+  wallpaper?: string | null;
+  /** Accuses de lecture (vu / lu) actifs. */
+  readReceipts?: boolean;
+  /** Createur : seul a pouvoir changer les accuses de lecture. */
+  createdById?: string | null;
   type: 'PUBLIC' | 'PRIVATE' | 'DIRECT';
   _count?: { messages: number; members: number };
-  members?: { userId: string; user: Pick<User, 'id' | 'fullName' | 'avatarUrl' | 'presenceStatus'> }[];
+  members?: {
+    userId: string;
+    lastReadAt?: string | null;
+    canView?: boolean;
+    canRead?: boolean;
+    canWrite?: boolean;
+    isAdmin?: boolean;
+    user: Pick<User, 'id' | 'fullName' | 'avatarUrl' | 'presenceStatus'>;
+  }[];
   /** Messages non lus (base sur ChannelMember.lastReadAt cote serveur). */
   unreadCount?: number;
+  /** Nombre de membres actifs (membres de l'espace moins ceux desactives). */
+  activeMemberCount?: number;
 }
 
 export interface Attachment {
@@ -58,9 +85,15 @@ export interface Automation {
   workspaceId: string;
   name: string;
   enabled: boolean;
-  triggerType: 'form.response.created' | 'card.moved.done' | 'meal.measurement.created' | 'message.keyword';
+  triggerType:
+    | 'form.response.created'
+    | 'card.moved.done'
+    | 'card.created'
+    | 'meal.measurement.created'
+    | 'message.keyword'
+    | 'channel.created';
   triggerConfig: Record<string, string>;
-  actionType: 'message.post' | 'card.create';
+  actionType: 'message.post' | 'card.create' | 'webhook.post';
   actionConfig: Record<string, string>;
   lastRunAt?: string | null;
   runCount: number;
@@ -117,6 +150,7 @@ export interface Column {
 export interface Board {
   id: string;
   workspaceId?: string;
+  workspace?: WorkspaceRef;
   name: string;
   description?: string | null;
   status: BoardStatus;
@@ -155,6 +189,7 @@ export interface Measurement {
 
 export interface Project {
   id: string;
+  workspace?: WorkspaceRef;
   name: string;
   code?: string | null;
   donor?: string | null;
@@ -169,12 +204,39 @@ export type FieldType =
   | 'TEXT'
   | 'TEXTAREA'
   | 'NUMBER'
+  | 'INTEGER'
+  | 'DECIMAL'
   | 'DATE'
+  | 'DATETIME'
+  | 'TIME'
+  | 'EMAIL'
+  | 'PHONE'
+  | 'URL'
+  | 'RATING'
+  | 'RANGE'
   | 'SELECT'
   | 'MULTISELECT'
   | 'BOOLEAN'
+  | 'ACKNOWLEDGE'
+  | 'NOTE'
+  | 'BARCODE'
+  | 'SIGNATURE'
   | 'GEOPOINT'
   | 'PHOTO';
+
+/** Opérateurs de la logique d'affichage (skip logic « relevant »). */
+export type RelevantOp =
+  | 'eq'
+  | 'ne'
+  | 'gt'
+  | 'lt'
+  | 'gte'
+  | 'lte'
+  | 'contains'
+  | 'empty'
+  | 'notempty';
+
+export type ReviewState = 'PENDING' | 'APPROVED' | 'REJECTED' | 'FLAGGED';
 
 export interface FormField {
   id?: string;
@@ -190,15 +252,60 @@ export interface FormField {
   minValue?: number | null;
   maxValue?: number | null;
   pattern?: string;
+  /** Section de rattachement (clé). */
+  sectionKey?: string | null;
+  /** Skip logic. */
+  relevantField?: string | null;
+  relevantOp?: RelevantOp | null;
+  relevantValue?: string | null;
+  /** Contrainte de validation + message. */
+  constraintExpr?: string | null;
+  constraintMessage?: string | null;
+  /** Expression calculée (champ en lecture seule). */
+  calculation?: string | null;
+  appearance?: string | null;
+  rangeStep?: number | null;
+}
+
+export interface FormSection {
+  id?: string;
+  key: string;
+  title: string;
+  description?: string | null;
+  position: number;
+  repeatable: boolean;
+  repeatLabel?: string | null;
+  minRepeat?: number | null;
+  maxRepeat?: number | null;
+  relevantField?: string | null;
+  relevantOp?: RelevantOp | null;
+  relevantValue?: string | null;
 }
 
 export interface FormDef {
   id: string;
+  workspace?: WorkspaceRef;
   title: string;
   description?: string | null;
   status: 'DRAFT' | 'PUBLISHED' | 'CLOSED';
+  version?: number;
+  requireLogin?: boolean;
+  allowMultiple?: boolean;
+  publicCode?: string | null;
+  sections?: FormSection[];
   fields: FormField[];
-  _count?: { responses: number; fields: number };
+  _count?: { responses: number; fields: number; sections?: number };
+}
+
+/** Définition portable exportée / importée (sans identifiants). */
+export interface FormDefinitionExport {
+  talkioForm?: number;
+  title: string;
+  description?: string | null;
+  requireLogin?: boolean;
+  allowMultiple?: boolean;
+  sections?: FormSection[];
+  fields: FormField[];
 }
 
 export interface FormResponse {
@@ -206,8 +313,16 @@ export interface FormResponse {
   submittedAt: string;
   latitude?: number | null;
   longitude?: number | null;
-  submittedBy?: { id: string; fullName: string } | null;
-  answers: { fieldId: string; value: unknown }[];
+  formVersion?: number;
+  deviceId?: string | null;
+  submittedBy?: { id: string; fullName: string; avatarUrl?: string | null } | null;
+  email?: string | null;
+  reviewState?: ReviewState;
+  reviewNote?: string | null;
+  reviewedBy?: { id: string; fullName: string } | null;
+  reviewedAt?: string | null;
+  /** Lignes brutes : une par (champ, itération). */
+  answers: { fieldId: string; groupIndex?: number; value: unknown }[];
 }
 
 export interface Calendar {

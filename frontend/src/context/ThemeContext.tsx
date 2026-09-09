@@ -3,17 +3,17 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 export type ThemePref = 'light' | 'dark' | 'system';
 type Resolved = 'light' | 'dark';
 
-export const DEFAULT_ACCENT = '#3390ec';
+export const DEFAULT_ACCENT = '#ff2c5f';
 export const ACCENT_PRESETS = [
-  '#3390ec', // bleu Telegram
-  '#8774e1', // violet Telegram
-  '#2563eb', // bleu vif
+  '#ff2c5f', // rose Talkio (defaut)
+  '#3390ec', // bleu
+  '#8774e1', // violet
   '#0891b2', // cyan
   '#059669', // emeraude
   '#0cae36', // vert Talkio (historique)
   '#65a30d', // olive
   '#ea580c', // orange
-  '#db2777', // rose
+  '#db2777', // rose fonce
   '#e11d48', // rouge
 ];
 
@@ -39,7 +39,7 @@ function initialPref(): ThemePref {
 
 function hexToRgb(hex: string): [number, number, number] {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
-  if (!m) return [51, 144, 236];
+  if (!m) return [255, 44, 95];
   const n = parseInt(m[1], 16);
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }

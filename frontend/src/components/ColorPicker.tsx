@@ -50,7 +50,7 @@ export default function ColorPicker({ value, onChange, allowNone, presets = ACCE
         <input
           type="color"
           className="sr-only"
-          value={/^#[0-9a-f]{6}$/i.test(norm) ? norm : '#3390ec'}
+          value={/^#[0-9a-f]{6}$/i.test(norm) ? norm : '#ff2c5f'}
           onChange={(e) => onChange(e.target.value)}
         />
       </label>

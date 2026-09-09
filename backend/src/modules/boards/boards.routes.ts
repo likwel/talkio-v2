@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { asyncHandler } from '../../lib/asyncHandler';
 import { validate } from '../../middleware/validate';
 import { prisma } from '../../lib/prisma';
-import { requireWorkspaceMember } from '../../lib/access';
+import { myWorkspaceIds, requireWorkspaceMember } from '../../lib/access';
 import { getIO } from '../../realtime/socket';
 import { notFound } from '../../lib/http';
 import { runAutomations } from '../automations/dispatch';
@@ -29,14 +29,19 @@ function progressFromColumns(columns: { name: string; _count: { cards: number } 
 
 router.get(
   '/',
-  validate(z.object({ workspaceId: z.string() }), 'query'),
+  validate(z.object({ workspaceId: z.string().optional() }), 'query'),
   asyncHandler(async (req, res) => {
-    const workspaceId = String(req.query.workspaceId);
-    await requireWorkspaceMember(req.user!.id, workspaceId);
+    // Sans workspaceId : agrège les projets de TOUS les espaces de l'utilisateur.
+    const where = req.query.workspaceId
+      ? { workspaceId: String(req.query.workspaceId) }
+      : { workspaceId: { in: await myWorkspaceIds(req.user!.id) } };
+    if (req.query.workspaceId) await requireWorkspaceMember(req.user!.id, String(req.query.workspaceId));
+
     const boards = await prisma.board.findMany({
-      where: { workspaceId },
+      where,
       include: {
         lead: { select: userSel },
+        workspace: { select: { id: true, name: true, color: true, isPersonal: true } },
         columns: { select: { name: true, _count: { select: { cards: true } } } },
         _count: { select: { members: true, columns: true } },
       },
@@ -226,6 +231,11 @@ router.post(
       },
     });
     getIO()?.to(`board:${column.boardId}`).emit('board:changed', { boardId: column.boardId });
+    runAutomations(column.board.workspaceId, 'card.created', {
+      card: { title: card.title, id: card.id },
+      board: { id: column.boardId },
+      summary: `Nouvelle tache « ${card.title} » dans « ${column.name} »`,
+    });
     res.status(201).json(card);
   }),
 );
@@ -288,7 +298,7 @@ router.post(
         card: { title: card.title, id: card.id },
         board: { name: card.column.board.name, id: card.column.boardId },
         column: toColumn.name,
-        summary: `Tache terminee : ${card.title} (${card.column.board.name})`,
+        summary: `Tâche terminée : ${card.title} (${card.column.board.name})`,
       });
     }
     res.json({ ok: true });

@@ -8,7 +8,11 @@ interface WorkspaceState {
   workspaces: Workspace[];
   /** Ordonnes par utilisation recente (le courant en tete). */
   orderedWorkspaces: Workspace[];
+  /** Espaces reels (hors espace personnel) — proposes dans le selecteur de messagerie. */
+  teamWorkspaces: Workspace[];
   current: Workspace | null;
+  /** Espace personnel : depot par defaut des Projets / MEAL / Collecte. */
+  personal: Workspace | null;
   setCurrent: (w: Workspace) => void;
   reload: () => Promise<void>;
   /** Rafraichit la liste (compteurs de non lus) sans changer l'espace courant. */
@@ -47,7 +51,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const r = await api.get<Workspace[]>('/workspaces');
     setWorkspaces(r.data);
     const savedId = localStorage.getItem('talkio.workspace');
-    const next = r.data.find((w) => w.id === savedId) || r.data[0] || null;
+    // Messagerie : on privilegie un espace d'equipe ; l'espace personnel n'est qu'un repli.
+    const next =
+      r.data.find((w) => w.id === savedId) ||
+      r.data.find((w) => !w.isPersonal) ||
+      r.data[0] ||
+      null;
     setCurrentState(next);
     if (next) pushRecent(next.id);
   }
@@ -91,6 +100,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setRecentTick((t) => t + 1);
   }
 
+  const personal = useMemo(
+    () => workspaces.find((w) => w.isPersonal) ?? workspaces[0] ?? null,
+    [workspaces],
+  );
+  const teamWorkspaces = useMemo(() => workspaces.filter((w) => !w.isPersonal), [workspaces]);
+
   const orderedWorkspaces = useMemo(() => {
     const recent = readRecent();
     const rank = (id: string) => {
@@ -106,7 +121,18 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [workspaces, current, recentTick]);
 
   return (
-    <Ctx.Provider value={{ workspaces, orderedWorkspaces, current, setCurrent, reload, refreshList }}>
+    <Ctx.Provider
+      value={{
+        workspaces,
+        orderedWorkspaces,
+        teamWorkspaces,
+        current,
+        personal,
+        setCurrent,
+        reload,
+        refreshList,
+      }}
+    >
       {children}
     </Ctx.Provider>
   );

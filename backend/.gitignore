@@ -3,4 +3,5 @@ dist
 .env
 *.log
 
-uploads/
+# Dossier de stockage des pieces jointes (a la racine du backend uniquement)
+/uploads/

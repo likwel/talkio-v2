@@ -1,12 +1,14 @@
 import { NavLink } from 'react-router-dom';
 import clsx from 'clsx';
 import { NAV_ITEMS } from '@/lib/nav';
+import { useT } from '@/i18n';
 
 /** Barre de navigation fixe en bas, visible sur mobile / tablette (< lg). */
 export default function BottomNav() {
+  const t = useT();
   return (
     <nav className="bottom-nav">
-      {NAV_ITEMS.map(({ to, label, end, Icon }) => (
+      {NAV_ITEMS.map(({ to, labelKey, end, Icon }) => (
         <NavLink
           key={to}
           to={to}
@@ -17,8 +19,10 @@ export default function BottomNav() {
         >
           {({ isActive }) => (
             <>
-              <Icon className="h-6 w-6 shrink-0" />
-              <span className={clsx('truncate', isActive && 'font-semibold')}>{label}</span>
+              <Icon
+                className={clsx('h-6 w-6 shrink-0', isActive ? 'icon-3d-strong' : 'icon-3d')}
+              />
+              <span className={clsx('truncate', isActive && 'font-semibold')}>{t(labelKey)}</span>
             </>
           )}
         </NavLink>

@@ -4,8 +4,10 @@ import { getIO } from '../../realtime/socket';
 export type TriggerType =
   | 'form.response.created'
   | 'card.moved.done'
+  | 'card.created'
   | 'meal.measurement.created'
-  | 'message.keyword';
+  | 'message.keyword'
+  | 'channel.created';
 
 type Ctx = Record<string, unknown>;
 
@@ -45,6 +47,27 @@ async function runAction(
     });
     const board = await prisma.column.findUnique({ where: { id: cfg.columnId }, select: { boardId: true } });
     if (board) getIO()?.to(`board:${board.boardId}`).emit('board:changed', { boardId: board.boardId });
+    return;
+  }
+
+  // Envoi d'un webhook JSON (integrations externes).
+  if (automation.actionType === 'webhook.post' && cfg.url && /^https?:\/\//i.test(cfg.url)) {
+    try {
+      await fetch(cfg.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          automationId: automation.id,
+          workspaceId: automation.workspaceId,
+          summary: render(cfg.template || '{{summary}}', ctx),
+          context: ctx,
+          sentAt: new Date().toISOString(),
+        }),
+      });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[automations] webhook echoue', err);
+    }
   }
 }
 

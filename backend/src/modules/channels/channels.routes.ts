@@ -5,6 +5,7 @@ import { validate } from '../../middleware/validate';
 import { prisma } from '../../lib/prisma';
 import { requireWorkspaceMember } from '../../lib/access';
 import { badRequest, forbidden, notFound } from '../../lib/http';
+import { runAutomations } from '../automations/dispatch';
 
 const router = Router();
 
@@ -12,12 +13,12 @@ async function requireChannelAccess(userId: string, channelId: string) {
   const channel = await prisma.channel.findUnique({ where: { id: channelId } });
   if (!channel) throw notFound('Canal introuvable');
   await requireWorkspaceMember(userId, channel.workspaceId);
-  if (channel.type !== 'PUBLIC') {
-    const member = await prisma.channelMember.findUnique({
-      where: { channelId_userId: { channelId, userId } },
-    });
-    if (!member) throw forbidden('Canal prive');
-  }
+  const member = await prisma.channelMember.findUnique({
+    where: { channelId_userId: { channelId, userId } },
+  });
+  if (channel.type !== 'PUBLIC' && !member) throw forbidden('Canal prive');
+  // Permission de lecture retiree pour ce membre dans ce salon.
+  if (member && member.canRead === false) throw forbidden('Lecture non autorisee dans ce salon');
   return channel;
 }
 
@@ -31,16 +32,32 @@ router.get(
     const channels = await prisma.channel.findMany({
       where: {
         workspaceId,
-        OR: [{ type: 'PUBLIC' }, { members: { some: { userId: me } } }],
+        AND: [
+          { OR: [{ type: 'PUBLIC' }, { members: { some: { userId: me } } }] },
+          // Salon masque si ma permission "vue" a ete retiree.
+          { NOT: { members: { some: { userId: me, canView: false } } } },
+        ],
       },
       include: {
         _count: { select: { messages: true, members: true } },
         members: {
-          select: { userId: true, user: { select: { id: true, fullName: true, avatarUrl: true, presenceStatus: true } } },
+          select: {
+            userId: true,
+            lastReadAt: true,
+            canView: true,
+            canRead: true,
+            canWrite: true,
+            isAdmin: true,
+            user: { select: { id: true, fullName: true, avatarUrl: true, presenceStatus: true } },
+          },
         },
       },
       orderBy: { createdAt: 'asc' },
     });
+
+    // Nombre de membres "actifs" par salon : tous les membres de l'espace pour un
+    // salon non direct, moins ceux dont la vue a ete retiree.
+    const wsMemberCount = await prisma.workspaceMember.count({ where: { workspaceId } });
 
     // Nombre de messages non lus par salon (base sur ChannelMember.lastReadAt).
     const myMemberships = await prisma.channelMember.findMany({
@@ -65,7 +82,14 @@ router.get(
     );
     const unreadByChannel = new Map(unreadEntries);
 
-    res.json(channels.map((c) => ({ ...c, unreadCount: unreadByChannel.get(c.id) ?? 0 })));
+    res.json(
+      channels.map((c) => {
+        const deactivated = c.members.filter((m) => m.canView === false).length;
+        const activeMemberCount =
+          c.type === 'DIRECT' ? c._count.members : Math.max(0, wsMemberCount - deactivated);
+        return { ...c, unreadCount: unreadByChannel.get(c.id) ?? 0, activeMemberCount };
+      }),
+    );
   }),
 );
 
@@ -101,15 +125,30 @@ router.post(
         name: req.body.name,
         topic: req.body.topic,
         type: req.body.type,
+        createdById: req.user!.id,
         members: { create: { userId: req.user!.id, isAdmin: true } },
       },
+    });
+    runAutomations(req.body.workspaceId, 'channel.created', {
+      channel: { name: channel.name, id: channel.id },
+      summary: `Nouveau salon « ${channel.name ?? ''} »`,
     });
     res.status(201).json(channel);
   }),
 );
 
 const memberInclude = {
-  members: { select: { userId: true, user: { select: { id: true, fullName: true, avatarUrl: true, presenceStatus: true } } } },
+  members: {
+    select: {
+      userId: true,
+      lastReadAt: true,
+      canView: true,
+      canRead: true,
+      canWrite: true,
+      isAdmin: true,
+      user: { select: { id: true, fullName: true, avatarUrl: true, presenceStatus: true } },
+    },
+  },
 } as const;
 
 /** Cree (ou retrouve) une conversation directe 1:1 ou de groupe. */
@@ -157,6 +196,7 @@ router.post(
         workspaceId,
         type: 'DIRECT',
         name: others.length > 1 ? name?.trim() || null : null,
+        createdById: me,
         members: { create: memberIds.map((userId) => ({ userId })) },
       },
       include: memberInclude,
@@ -188,16 +228,30 @@ router.patch(
         .regex(/^#[0-9a-f]{6}$/i)
         .nullable()
         .optional(),
+      wallpaper: z.string().max(40).nullable().optional(),
+      readReceipts: z.boolean().optional(),
     }),
   ),
   asyncHandler(async (req, res) => {
     const channel = await requireChannelAccess(req.user!.id, req.params.id);
+
+    // Les accuses de lecture ne sont modifiables que par le createur de la conversation.
+    if (
+      req.body.readReceipts !== undefined &&
+      channel.createdById &&
+      channel.createdById !== req.user!.id
+    ) {
+      throw forbidden('Seul le createur de la conversation peut modifier les accuses de lecture');
+    }
+
     const updated = await prisma.channel.update({
       where: { id: channel.id },
       data: {
         ...(req.body.name !== undefined ? { name: req.body.name } : {}),
         ...(req.body.topic !== undefined ? { topic: req.body.topic } : {}),
         ...(req.body.color !== undefined ? { color: req.body.color } : {}),
+        ...(req.body.wallpaper !== undefined ? { wallpaper: req.body.wallpaper } : {}),
+        ...(req.body.readReceipts !== undefined ? { readReceipts: req.body.readReceipts } : {}),
       },
       include: memberInclude,
     });
@@ -217,6 +271,40 @@ router.post(
     });
     const full = await prisma.channel.findUnique({ where: { id: channel.id }, include: memberInclude });
     res.status(201).json(full);
+  }),
+);
+
+/**
+ * Permissions d'un membre de l'espace pour ce salon : vue / lecture / ecriture.
+ * Cree (upsert) une ligne ChannelMember portant les surcharges. On ne retire
+ * jamais un membre de l'espace : on desactive seulement ses acces.
+ */
+router.patch(
+  '/:id/members/:userId/permissions',
+  validate(
+    z.object({
+      canView: z.boolean().optional(),
+      canRead: z.boolean().optional(),
+      canWrite: z.boolean().optional(),
+    }),
+  ),
+  asyncHandler(async (req, res) => {
+    const channel = await requireChannelAccess(req.user!.id, req.params.id);
+    if (channel.type === 'DIRECT') throw badRequest('Permissions non applicables a une conversation directe');
+    await requireWorkspaceMember(req.params.userId, channel.workspaceId);
+
+    const data = {
+      ...(req.body.canView !== undefined ? { canView: req.body.canView } : {}),
+      ...(req.body.canRead !== undefined ? { canRead: req.body.canRead } : {}),
+      ...(req.body.canWrite !== undefined ? { canWrite: req.body.canWrite } : {}),
+    };
+    await prisma.channelMember.upsert({
+      where: { channelId_userId: { channelId: channel.id, userId: req.params.userId } },
+      update: data,
+      create: { channelId: channel.id, userId: req.params.userId, ...data },
+    });
+    const full = await prisma.channel.findUnique({ where: { id: channel.id }, include: memberInclude });
+    res.json(full);
   }),
 );
 

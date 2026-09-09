@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
@@ -15,10 +15,13 @@ import {
   IconCopy,
   IconEye,
   IconEdit,
+  IconAttach,
 } from '@/lib/icons';
 import ViewToggle, { useViewMode } from '@/components/ViewToggle';
 import EmptyState from '@/components/EmptyState';
 import Pagination, { usePagination } from '@/components/Pagination';
+import PageHeader from '@/components/PageHeader';
+import WorkspaceTag from '@/components/WorkspaceTag';
 
 type Status = FormDef['status'];
 
@@ -34,45 +37,59 @@ async function downloadCsv(formId: string, title: string) {
 
 const STATUS: Record<Status, { label: string; style: string }> = {
   DRAFT: { label: 'Brouillon', style: 'bg-[var(--surface-2)] text-[var(--text-dim)]' },
-  PUBLISHED: { label: 'Publie', style: 'bg-[var(--accent-soft)] text-[var(--accent-strong)]' },
-  CLOSED: { label: 'Ferme', style: 'bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-300' },
+  PUBLISHED: { label: 'Publié', style: 'bg-[var(--accent-soft)] text-[var(--accent-strong)]' },
+  CLOSED: { label: 'Fermé', style: 'bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-300' },
 };
 
-const publicUrl = (id: string) => `${window.location.origin}/f/${id}`;
+const publicUrl = (f: FormDef) => `${window.location.origin}/f/${f.publicCode ?? f.id}`;
 
 export default function Forms() {
-  const { current } = useWorkspace();
+  const { workspaces, personal } = useWorkspace();
   const qc = useQueryClient();
   const dialog = useDialog();
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [view, setView] = useViewMode('forms');
+  const importRef = useRef<HTMLInputElement>(null);
+  const targetWs = personal?.id ?? workspaces[0]?.id;
+
+  async function importDefinition(file: File | undefined) {
+    if (!file || !targetWs) return;
+    try {
+      const definition = JSON.parse(await file.text());
+      await api.post('/forms/import', { workspaceId: targetWs, definition });
+      qc.invalidateQueries({ queryKey: ['forms', 'all'] });
+    } catch {
+      await dialog.alert({ title: 'Import impossible', message: 'Fichier .talkioform.json invalide.' });
+    } finally {
+      if (importRef.current) importRef.current.value = '';
+    }
+  }
 
   const forms = useQuery({
-    queryKey: ['forms', current?.id],
-    enabled: !!current,
-    queryFn: async () => (await api.get<FormDef[]>('/forms', { params: { workspaceId: current!.id } })).data,
+    queryKey: ['forms', 'all'],
+    queryFn: async () => (await api.get<FormDef[]>('/forms')).data,
   });
 
   const setStatus = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: Status }) =>
       (await api.put(`/forms/${id}`, { status })).data,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['forms', current?.id] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['forms', 'all'] }),
   });
 
-  async function copyLink(id: string) {
+  async function copyLink(f: FormDef) {
     try {
-      await navigator.clipboard.writeText(publicUrl(id));
-      setCopiedId(id);
-      setTimeout(() => setCopiedId((c) => (c === id ? null : c)), 1800);
+      await navigator.clipboard.writeText(publicUrl(f));
+      setCopiedId(f.id);
+      setTimeout(() => setCopiedId((c) => (c === f.id ? null : c)), 1800);
     } catch {
-      await dialog.alert({ title: 'Lien public', message: publicUrl(id) });
+      await dialog.alert({ title: 'Lien public', message: publicUrl(f) });
     }
   }
 
   async function closeForm(f: FormDef) {
     const ok = await dialog.confirm({
       title: 'Fermer le formulaire',
-      message: `« ${f.title} » n'acceptera plus de nouvelles reponses. Vous pourrez le rouvrir plus tard.`,
+      message: `« ${f.title} » n'acceptera plus de nouvelles réponses. Vous pourrez le rouvrir plus tard.`,
       confirmLabel: 'Fermer',
       danger: true,
     });
@@ -92,11 +109,11 @@ export default function Forms() {
       )}
       {f.status === 'PUBLISHED' && (
         <>
-          <button className="btn-primary btn-sm" onClick={() => copyLink(f.id)}>
+          <button className="btn-primary btn-sm" onClick={() => copyLink(f)}>
             <IconCopy className="h-4 w-4" />
-            {copiedId === f.id ? 'Lien copie' : 'Copier le lien public'}
+            {copiedId === f.id ? 'Lien copié' : 'Copier le lien'}
           </button>
-          <a href={publicUrl(f.id)} target="_blank" rel="noreferrer" className="btn-outlined btn-sm">
+          <a href={publicUrl(f)} target="_blank" rel="noreferrer" className="btn-outlined btn-sm">
             <IconEye className="h-4 w-4" /> Ouvrir
           </a>
           <button className="btn-outlined btn-sm" disabled={setStatus.isPending} onClick={() => closeForm(f)}>
@@ -122,10 +139,10 @@ export default function Forms() {
         <IconEye className="h-4 w-4" /> Saisir
       </Link>
       <Link to={`/forms/${f.id}/responses`} className="btn-text btn-sm">
-        Reponses ({f._count?.responses ?? 0})
+        Réponses ({f._count?.responses ?? 0})
       </Link>
       <Link to={`/forms/${f.id}/edit`} className="btn-text btn-sm">
-        <IconEdit className="h-4 w-4" /> Editer
+        <IconEdit className="h-4 w-4" /> Éditer
       </Link>
       <button onClick={() => downloadCsv(f.id, f.title)} className="btn-text btn-sm">
         <IconDownload className="h-4 w-4" /> CSV
@@ -137,22 +154,27 @@ export default function Forms() {
   const pg = usePagination(forms.data ?? [], 12, view);
 
   return (
-    <div className="page max-w-8xl space-y-5">
-      {/* En-tete */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="page-title">
-            <IconForms className="h-6 w-6 text-[var(--accent)]" /> Collecte
-          </h1>
-          <p className="mt-0.5 text-sm text-[var(--text-dim)]">
-            Formulaires d'enquete : brouillon → publie (lien public) → ferme. Reponses en tableau + export CSV.
-          </p>
-        </div>
+    <div className="flex h-full flex-col">
+      <PageHeader icon={<IconForms className="h-6 w-6 shrink-0 text-[var(--accent)]" />} title="Collecte">
+        <button className="btn-outlined" onClick={() => importRef.current?.click()}>
+          <IconAttach className="h-4 w-4" />
+          <span className="hidden sm:inline">Importer</span>
+        </button>
+        <input
+          ref={importRef}
+          type="file"
+          accept=".json,application/json"
+          className="hidden"
+          onChange={(e) => importDefinition(e.target.files?.[0])}
+        />
         <Link to="/forms/new" className="btn-primary">
-          <IconAdd className="h-5 w-5" /> Nouveau formulaire
+          <IconAdd className="h-5 w-5" />
+          <span className="hidden sm:inline">Nouveau formulaire</span>
         </Link>
-      </div>
+      </PageHeader>
 
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="page max-w-8xl space-y-5">
       {/* Barre d'outils */}
       <div className="flex items-center justify-between">
         <span className="text-sm font-semibold text-[var(--text-dim)]">{total} formulaire(s)</span>
@@ -163,7 +185,7 @@ export default function Forms() {
         <EmptyState
           icon={<IconForms className="h-7 w-7" />}
           title="Aucun formulaire"
-          hint="Creez un formulaire d'enquete personnalisable, puis publiez-le pour recolter des reponses."
+          hint="Créez un formulaire d'enquête personnalisable, puis publiez-le pour récolter des réponses."
           action={
             <Link to="/forms/new" className="btn-primary">
               <IconAdd className="h-5 w-5" /> Nouveau formulaire
@@ -185,8 +207,11 @@ export default function Forms() {
                   {STATUS[f.status].label}
                 </span>
               </div>
+              <WorkspaceTag ws={f.workspace} />
               <div className="text-xs text-[var(--text-dim)]">
-                {f._count?.fields ?? 0} champs · {f._count?.responses ?? 0} reponses
+                {f._count?.fields ?? 0} champs
+                {f._count?.sections ? ` · ${f._count.sections} sections` : ''} · {f._count?.responses ?? 0} réponses
+                {f.status === 'PUBLISHED' && f.version ? ` · v${f.version}` : ''}
               </div>
               <div className="flex flex-wrap gap-1.5">{primaryActions(f)}</div>
               <div className="mt-auto flex flex-wrap gap-1 border-t border-[var(--outline)] pt-2 text-sm">
@@ -208,6 +233,7 @@ export default function Forms() {
                 {STATUS[f.status].label}
               </span>
               <span className="min-w-0 flex-1 truncate font-medium item-title">{f.title}</span>
+              <WorkspaceTag ws={f.workspace} className="hidden sm:inline-flex" />
               <span className="shrink-0 text-2xs text-[var(--text-dim)]">
                 {f._count?.fields ?? 0} champs · {f._count?.responses ?? 0} rep.
               </span>
@@ -228,6 +254,8 @@ export default function Forms() {
         start={pg.start}
         end={pg.end}
       />
+        </div>
+      </div>
     </div>
   );
 }

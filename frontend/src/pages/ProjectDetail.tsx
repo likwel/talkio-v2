@@ -8,18 +8,18 @@ import Select from '@/components/Select';
 
 const LEVELS: Indicator['level'][] = ['IMPACT', 'OUTCOME', 'OUTPUT', 'ACTIVITY'];
 
-/** Libelles en langage clair (le sigle technique reste entre parentheses). */
+/** Libellés en langage clair (le sigle technique reste entre parenthèses). */
 const LEVEL_LABEL: Record<Indicator['level'], string> = {
-  IMPACT: 'Impact — changement durable vise (Impact)',
-  OUTCOME: 'Resultat — effet a moyen terme (Outcome)',
+  IMPACT: 'Impact — changement durable visé (Impact)',
+  OUTCOME: 'Résultat — effet à moyen terme (Outcome)',
   OUTPUT: 'Produit — livrable direct de l’action (Output)',
-  ACTIVITY: 'Activite — action menee sur le terrain (Activity)',
+  ACTIVITY: 'Activité — action menée sur le terrain (Activity)',
 };
 const LEVEL_SHORT: Record<Indicator['level'], string> = {
   IMPACT: 'Impact',
-  OUTCOME: 'Resultat',
+  OUTCOME: 'Résultat',
   OUTPUT: 'Produit',
-  ACTIVITY: 'Activite',
+  ACTIVITY: 'Activité',
 };
 
 export default function ProjectDetail() {
@@ -63,13 +63,13 @@ export default function ProjectDetail() {
   return (
     <div className="page max-w-8xl space-y-6">
       <div className="flex items-center gap-2">
-        <Link to="/meal" className="icon-btn" aria-label="Retour a MEAL">
+        <Link to="/meal" className="icon-btn" aria-label="Retour à MEAL">
           <IconBack className="h-5 w-5" />
         </Link>
         <h1 className="page-title truncate">{project.data.name}</h1>
       </div>
       <p className="text-[var(--text-dim)]">
-        {project.data.code} {project.data.donor && `· Bailleur: ${project.data.donor}`}
+        {project.data.code} {project.data.donor && `· Bailleur : ${project.data.donor}`}
       </p>
 
       <div className="flex items-center justify-between">
@@ -84,7 +84,7 @@ export default function ProjectDetail() {
           <input className="input" placeholder="Code" value={ind.code} onChange={(e) => setInd({ ...ind, code: e.target.value })} required />
           <input
             className="input sm:col-span-2"
-            placeholder="Libelle de l'indicateur"
+            placeholder="Libellé de l'indicateur"
             value={ind.name}
             onChange={(e) => setInd({ ...ind, name: e.target.value })}
             required
@@ -96,7 +96,7 @@ export default function ProjectDetail() {
             onChange={(level) => setInd({ ...ind, level })}
             options={LEVELS.map((l) => ({ value: l, label: LEVEL_LABEL[l] }))}
           />
-          <input className="input" placeholder="Unite" value={ind.unit} onChange={(e) => setInd({ ...ind, unit: e.target.value })} />
+          <input className="input" placeholder="Unité" value={ind.unit} onChange={(e) => setInd({ ...ind, unit: e.target.value })} />
           <input
             className="input"
             type="number"
@@ -125,7 +125,7 @@ export default function ProjectDetail() {
             </div>
           );
         })}
-        {project.data.indicators?.length === 0 && <p className="text-[var(--text-dim)]">Aucun indicateur defini.</p>}
+        {project.data.indicators?.length === 0 && <p className="text-[var(--text-dim)]">Aucun indicateur défini.</p>}
       </div>
     </div>
   );
@@ -151,7 +151,7 @@ function IndicatorRow({
             <span className="text-[var(--text-dim)]">{indicator.code}</span> — {indicator.name}
           </div>
           <div className="text-xs text-[var(--text-dim)]">
-            Realise: {indicator.achieved ?? 0}
+            Réalisé : {indicator.achieved ?? 0}
             {indicator.target != null && ` / ${indicator.target}`} {indicator.unit}
           </div>
         </div>

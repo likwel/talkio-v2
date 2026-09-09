@@ -136,12 +136,12 @@ async function main() {
       workspaceId: workspace.id,
       ownerId: alice.id,
       name: 'Mon agenda',
-      color: '#0cae36',
+      color: '#ff2c5f',
       isDefault: true,
     },
   });
   const calProjet = await prisma.calendar.create({
-    data: { workspaceId: workspace.id, ownerId: alice.id, name: 'Projet WASH', color: '#63e6be' },
+    data: { workspaceId: workspace.id, ownerId: alice.id, name: 'Projet WASH', color: '#8774e1' },
   });
 
   const at = (dayOffset: number, hour: number, minute = 0) => {

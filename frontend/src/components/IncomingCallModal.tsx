@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '@/lib/api';
 import { getSocket } from '@/lib/socket';
+import Avatar from '@/components/Avatar';
 import { IconCall, IconVideo, IconCallEnd } from '@/lib/icons';
 
 interface Ring {
@@ -12,15 +14,6 @@ interface Ring {
   channelName: string | null;
   from: { id: string; fullName: string; avatarUrl?: string | null };
 }
-
-const AV = ['#3390ec', '#8774e1', '#f5a623', '#e8506e', '#12b886', '#4c6ef5', '#e64980', '#0ca678'];
-const tint = (id: string) => {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
-  return AV[h % AV.length];
-};
-const initials = (n: string) =>
-  n.split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase() ?? '').join('');
 
 /** Sonnerie d'appel entrant, globale (modale Accepter / Refuser / Ignorer). */
 export default function IncomingCallModal() {
@@ -79,14 +72,11 @@ export default function IncomingCallModal() {
     setRing(null);
   };
 
-  return (
-    <div className="fixed inset-0 z-[70] grid place-items-center bg-black/50 p-4 backdrop-blur-[2px]">
+  return createPortal(
+    <div className="fixed inset-0 z-[95] grid place-items-center bg-black/50 p-4 backdrop-blur-[2px]">
       <div className="w-full max-w-xs rounded-2xl border border-[var(--outline)] bg-[var(--surface)] p-5 text-center shadow-elevation-3">
-        <span
-          className="relative mx-auto grid h-16 w-16 place-items-center rounded-full text-xl font-bold text-white"
-          style={{ background: tint(ring.from.id) }}
-        >
-          {initials(ring.from.fullName)}
+        <span className="relative mx-auto block h-16 w-16">
+          <Avatar id={ring.from.id} name={ring.from.fullName} src={ring.from.avatarUrl} size={64} />
           <span className="absolute inset-0 animate-ping rounded-full border-2 border-[var(--accent)] opacity-60" />
         </span>
         <div className="mt-3 font-display text-lg font-bold">{ring.from.fullName}</div>
@@ -117,6 +107,7 @@ export default function IncomingCallModal() {
           Ignorer
         </button>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

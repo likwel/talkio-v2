@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { api } from '@/lib/api';
 import { toLocalInput } from '@/lib/date';
 import type { Calendar, CalendarEvent } from '@/lib/types';
@@ -90,9 +91,9 @@ export default function EventDialog({ calendars, event, draft, onClose, onSaved 
     }
   }
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 grid place-items-end bg-black/40 p-0 sm:place-items-center sm:p-4"
+      className="fixed inset-0 z-[80] grid place-items-end bg-black/40 p-0 sm:place-items-center sm:p-4"
       onClick={onClose}
     >
       <form
@@ -206,6 +207,7 @@ export default function EventDialog({ calendars, event, draft, onClose, onSaved 
           </div>
         </div>
       </form>
-    </div>
+    </div>,
+    document.body,
   );
 }

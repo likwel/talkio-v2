@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { pushToast } from './toastBus';
 
 const baseURL = import.meta.env.VITE_API_URL || '/api';
 
@@ -55,6 +56,23 @@ api.interceptors.response.use(
         window.location.href = '/login';
       }
     }
+
+    // Filet de securite : signale les erreurs qu'un ecran ne gere generalement
+    // pas lui-meme (permission refusee, panne serveur, reseau injoignable).
+    if (!original?.skipErrorToast) {
+      const status: number | undefined = error.response?.status;
+      const serverMsg: string | undefined = error.response?.data?.error;
+      if (!error.response && error.code !== 'ERR_CANCELED') {
+        pushToast('Impossible de joindre le serveur. Vérifiez votre connexion.', 'error');
+      } else if (status === 403) {
+        pushToast(serverMsg || "Vous n'avez pas la permission d'effectuer cette action.", 'error');
+      } else if (status === 429) {
+        pushToast(serverMsg || 'Trop de requêtes. Patientez un instant avant de réessayer.', 'error');
+      } else if (typeof status === 'number' && status >= 500) {
+        pushToast(serverMsg || 'Une erreur serveur est survenue. Réessayez dans un instant.', 'error');
+      }
+    }
+
     return Promise.reject(error);
   },
 );

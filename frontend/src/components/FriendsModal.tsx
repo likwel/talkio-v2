@@ -5,25 +5,13 @@ import { api } from '@/lib/api';
 import { getSocket } from '@/lib/socket';
 import { useDialog } from '@/context/DialogContext';
 import type { FriendRequest, User } from '@/lib/types';
+import Avatar from '@/components/Avatar';
 import { IconPersonAdd, IconTick, IconClose, IconChat, IconFriends } from '@/lib/icons';
-
-const AV = ['#0cae36', '#2563eb', '#d946ef', '#f59e0b', '#ef4444', '#14b8a6', '#8b5cf6', '#ec4899'];
-const tint = (id: string) => {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
-  return AV[h % AV.length];
-};
-const initials = (n: string) => n.split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase() ?? '').join('');
 
 function Row({ user, children }: { user: User; children?: ReactNode }) {
   return (
     <li className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-black/5 dark:hover:bg-white/5">
-      <span
-        className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-xs font-bold text-white"
-        style={{ background: tint(user.id) }}
-      >
-        {initials(user.fullName)}
-      </span>
+      <Avatar id={user.id} name={user.fullName} src={user.avatarUrl} size={36} />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-semibold">{user.fullName}</span>
         <span className="block truncate text-xs text-[var(--text-dim)]">{user.email}</span>

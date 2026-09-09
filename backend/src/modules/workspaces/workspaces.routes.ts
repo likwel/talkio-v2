@@ -3,7 +3,11 @@ import { z } from 'zod';
 import { asyncHandler } from '../../lib/asyncHandler';
 import { validate } from '../../middleware/validate';
 import { prisma } from '../../lib/prisma';
-import { requireWorkspaceAdmin, requireWorkspaceMember } from '../../lib/access';
+import {
+  getOrCreatePersonalWorkspace,
+  requireWorkspaceAdmin,
+  requireWorkspaceMember,
+} from '../../lib/access';
 import { badRequest, notFound } from '../../lib/http';
 
 const router = Router();
@@ -23,6 +27,8 @@ router.get(
   '/',
   asyncHandler(async (req, res) => {
     const me = req.user!.id;
+    // Garantit un espace personnel (dépôt par défaut Projet / MEAL / Collecte).
+    await getOrCreatePersonalWorkspace(me);
     const workspaces = await prisma.workspace.findMany({
       where: { members: { some: { userId: me } } },
       include: { _count: { select: { members: true, channels: true, boards: true } } },
@@ -109,6 +115,7 @@ router.patch(
         .regex(/^#[0-9a-f]{6}$/i)
         .nullable()
         .optional(),
+      imageUrl: z.string().max(500).nullable().optional(),
     }),
   ),
   asyncHandler(async (req, res) => {
@@ -118,6 +125,7 @@ router.patch(
       data: {
         ...(req.body.name !== undefined ? { name: req.body.name } : {}),
         ...(req.body.color !== undefined ? { color: req.body.color } : {}),
+        ...(req.body.imageUrl !== undefined ? { imageUrl: req.body.imageUrl } : {}),
       },
     });
     res.json(workspace);

@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { asyncHandler } from '../../lib/asyncHandler';
 import { validate } from '../../middleware/validate';
 import { prisma } from '../../lib/prisma';
-import { requireWorkspaceMember } from '../../lib/access';
+import { myWorkspaceIds, requireWorkspaceMember } from '../../lib/access';
 import { notFound } from '../../lib/http';
 import { runAutomations } from '../automations/dispatch';
 
@@ -13,13 +13,19 @@ const router = Router();
 
 router.get(
   '/projects',
-  validate(z.object({ workspaceId: z.string() }), 'query'),
+  validate(z.object({ workspaceId: z.string().optional() }), 'query'),
   asyncHandler(async (req, res) => {
-    const workspaceId = String(req.query.workspaceId);
-    await requireWorkspaceMember(req.user!.id, workspaceId);
+    const where = req.query.workspaceId
+      ? { workspaceId: String(req.query.workspaceId) }
+      : { workspaceId: { in: await myWorkspaceIds(req.user!.id) } };
+    if (req.query.workspaceId) await requireWorkspaceMember(req.user!.id, String(req.query.workspaceId));
+
     const projects = await prisma.project.findMany({
-      where: { workspaceId },
-      include: { _count: { select: { indicators: true, forms: true } } },
+      where,
+      include: {
+        workspace: { select: { id: true, name: true, color: true, isPersonal: true } },
+        _count: { select: { indicators: true, forms: true } },
+      },
       orderBy: { createdAt: 'desc' },
     });
     res.json(projects);
