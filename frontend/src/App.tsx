@@ -16,7 +16,6 @@ const Boards = lazy(() => import('@/pages/Boards'));
 const BoardDetail = lazy(() => import('@/pages/BoardDetail'));
 const Meal = lazy(() => import('@/pages/Meal'));
 const ProjectDetail = lazy(() => import('@/pages/ProjectDetail'));
-const Forms = lazy(() => import('@/pages/Forms'));
 const FormBuilder = lazy(() => import('@/pages/FormBuilder'));
 const FormFill = lazy(() => import('@/pages/FormFill'));
 const FormResponses = lazy(() => import('@/pages/FormResponses'));
@@ -63,7 +62,7 @@ export default function App() {
             <Route path="boards" element={<Navigate to="/projects" replace />} />
             <Route path="meal" element={<Meal />} />
             <Route path="meal/projects/:projectId" element={<ProjectDetail />} />
-            <Route path="forms" element={<Forms />} />
+            <Route path="forms" element={<Navigate to="/meal?tab=forms" replace />} />
             <Route path="forms/new" element={<FormBuilder />} />
             <Route path="forms/:formId/edit" element={<FormBuilder />} />
             <Route path="forms/:formId/fill" element={<FormFill />} />

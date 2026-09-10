@@ -273,7 +273,7 @@ export default function FormBuilder() {
           await api.put(`/forms/${created.data.id}`, { status: nextStatus });
         }
       }
-      navigate('/forms');
+      navigate('/meal?tab=forms');
     } finally {
       setSaving(false);
     }
@@ -764,7 +764,7 @@ export default function FormBuilder() {
           </button>
         )}
 
-        <button className="btn-text ml-auto" onClick={() => navigate('/forms')}>
+        <button className="btn-text ml-auto" onClick={() => navigate('/meal?tab=forms')}>
           Annuler
         </button>
       </div>

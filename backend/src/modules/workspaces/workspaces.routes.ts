@@ -30,7 +30,12 @@ router.get(
     // Garantit un espace personnel (dépôt par défaut Projet / MEAL / Collecte).
     await getOrCreatePersonalWorkspace(me);
     const workspaces = await prisma.workspace.findMany({
-      where: { members: { some: { userId: me } } },
+      // Un espace personnel n'apparaît que pour son propriétaire (les amis
+      // invités pour un message direct n'y sont rattachés qu'en coulisses).
+      where: {
+        members: { some: { userId: me } },
+        OR: [{ isPersonal: false }, { members: { some: { userId: me, role: 'OWNER' } } }],
+      },
       include: { _count: { select: { members: true, channels: true, boards: true } } },
       orderBy: { createdAt: 'asc' },
     });

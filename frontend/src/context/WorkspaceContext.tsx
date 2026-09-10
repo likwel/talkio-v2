@@ -51,10 +51,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const r = await api.get<Workspace[]>('/workspaces');
     setWorkspaces(r.data);
     const savedId = localStorage.getItem('talkio.workspace');
-    // Messagerie : on privilegie un espace d'equipe ; l'espace personnel n'est qu'un repli.
+    // Première ouverture : on ouvre l'espace personnel par défaut.
     const next =
       r.data.find((w) => w.id === savedId) ||
-      r.data.find((w) => !w.isPersonal) ||
+      r.data.find((w) => w.isPersonal) ||
       r.data[0] ||
       null;
     setCurrentState(next);

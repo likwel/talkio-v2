@@ -12,6 +12,7 @@ import { DialogProvider } from '@/context/DialogContext';
 import { SettingsProvider } from '@/context/SettingsContext';
 import { PresenceProvider } from '@/context/PresenceContext';
 import { ProfileProvider } from '@/context/ProfileContext';
+import { CryptoProvider } from '@/context/CryptoContext';
 import { ImageViewerProvider } from '@/components/ImageViewer';
 import App from './App';
 import './index.css';
@@ -29,6 +30,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         <BrowserRouter>
           <DialogProvider>
             <AuthProvider>
+              <CryptoProvider>
               <WorkspaceProvider>
                 <PresenceProvider>
                   <SettingsProvider>
@@ -43,6 +45,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
                   </SettingsProvider>
                 </PresenceProvider>
               </WorkspaceProvider>
+              </CryptoProvider>
             </AuthProvider>
           </DialogProvider>
         </BrowserRouter>

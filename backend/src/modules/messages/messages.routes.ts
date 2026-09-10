@@ -12,7 +12,14 @@ const router = Router();
 
 const authorSelect = { id: true, fullName: true, avatarUrl: true, presenceStatus: true } as const;
 const parentSelect = {
-  select: { id: true, body: true, author: { select: { id: true, fullName: true } } },
+  select: {
+    id: true,
+    body: true,
+    encrypted: true,
+    iv: true,
+    keyVersion: true,
+    author: { select: { id: true, fullName: true } },
+  },
 } as const;
 const messageInclude = {
   author: { select: authorSelect },
@@ -69,10 +76,15 @@ router.post(
     z
       .object({
         channelId: z.string(),
-        body: z.string().max(4000).optional().default(''),
+        body: z.string().max(12000).optional().default(''),
         parentId: z.string().optional(),
         forwardedFrom: z.string().max(120).optional(),
         attachments: z.array(attachmentSchema).max(10).optional(),
+        // Chiffrement de bout en bout : `body` est alors le texte chiffré (base64).
+        encrypted: z.boolean().optional(),
+        iv: z.string().max(400).optional(),
+        keyVersion: z.number().int().optional(),
+        mentionUserIds: z.array(z.string()).max(50).optional(),
       })
       .refine((v) => v.body.trim().length > 0 || (v.attachments?.length ?? 0) > 0, {
         message: 'Message vide',
@@ -89,6 +101,12 @@ router.post(
       throw forbidden("Ecriture non autorisee dans ce salon");
     }
 
+    const encrypted = !!req.body.encrypted;
+    if (channel.e2ee && !encrypted) throw forbidden('Cette conversation est chiffrée de bout en bout');
+    if (!channel.e2ee && encrypted) throw forbidden("Cette conversation n'est pas chiffrée");
+    if (encrypted && (!req.body.iv || !req.body.keyVersion)) throw forbidden('Enveloppe de chiffrement incomplète');
+    if (encrypted && req.body.attachments?.length) throw forbidden('Pièces jointes non prises en charge en chiffré');
+
     const message = await prisma.message.create({
       data: {
         channelId: req.body.channelId,
@@ -96,6 +114,9 @@ router.post(
         body: req.body.body,
         parentId: req.body.parentId,
         forwardedFrom: req.body.forwardedFrom ?? null,
+        encrypted,
+        iv: encrypted ? req.body.iv : null,
+        keyVersion: encrypted ? req.body.keyVersion : null,
         ...(req.body.attachments?.length
           ? { attachments: { create: req.body.attachments } }
           : {}),
@@ -116,22 +137,31 @@ router.post(
     });
     memberRows.forEach((m) => recipients.add(m.userId));
 
-    // Mentions `@Prenom` : resolues sur les membres de l'espace (meme s'ils n'ont
-    // pas encore de ligne ChannelMember). Le mentionne recoit toujours une notif.
+    // Mentions. En clair : on résout `@Prenom` sur les membres de l'espace.
+    // En chiffré : le serveur ne lit rien, le client fournit les `mentionUserIds`.
     const mentioned = new Set<string>();
-    const tokens = new Set(
-      [...message.body.matchAll(/(?:^|\s)@([\p{L}][\p{L}\-']*)/gu)].map((m) => m[1].toLowerCase()),
-    );
-    if (tokens.size > 0) {
-      const wsMembers = await prisma.workspaceMember.findMany({
-        where: { workspaceId: channel.workspaceId, userId: { not: authorId } },
-        select: { userId: true, user: { select: { fullName: true } } },
-      });
-      for (const m of wsMembers) {
-        const firstName = m.user.fullName.split(/\s+/)[0]?.toLowerCase() ?? '';
-        if (firstName && tokens.has(firstName)) {
-          mentioned.add(m.userId);
-          recipients.add(m.userId);
+    if (encrypted) {
+      for (const uid of req.body.mentionUserIds ?? []) {
+        if (uid !== authorId) {
+          mentioned.add(uid);
+          recipients.add(uid);
+        }
+      }
+    } else {
+      const tokens = new Set(
+        [...message.body.matchAll(/(?:^|\s)@([\p{L}][\p{L}\-']*)/gu)].map((m) => m[1].toLowerCase()),
+      );
+      if (tokens.size > 0) {
+        const wsMembers = await prisma.workspaceMember.findMany({
+          where: { workspaceId: channel.workspaceId, userId: { not: authorId } },
+          select: { userId: true, user: { select: { fullName: true } } },
+        });
+        for (const m of wsMembers) {
+          const firstName = m.user.fullName.split(/\s+/)[0]?.toLowerCase() ?? '';
+          if (firstName && tokens.has(firstName)) {
+            mentioned.add(m.userId);
+            recipients.add(m.userId);
+          }
         }
       }
     }
@@ -141,14 +171,14 @@ router.post(
       workspaceId: channel.workspaceId,
       isDirect: channel.type === 'DIRECT',
       from: { id: message.author.id, fullName: message.author.fullName },
-      preview: message.body.slice(0, 140) || 'Piece jointe',
+      preview: encrypted ? '🔒 Message chiffré' : message.body.slice(0, 140) || 'Piece jointe',
       createdAt: message.createdAt,
     };
     recipients.forEach((uid) =>
       io?.to(`user:${uid}`).emit('message:notify', { ...notifyBase, mention: mentioned.has(uid) }),
     );
 
-    if (!message.parentId) {
+    if (!message.parentId && !encrypted) {
       runAutomations(channel.workspaceId, 'message.keyword', {
         message: { body: message.body, id: message.id },
         author: message.author.fullName,
@@ -161,15 +191,27 @@ router.post(
 
 router.patch(
   '/:id',
-  validate(z.object({ body: z.string().min(1).max(4000) })),
+  validate(
+    z.object({
+      body: z.string().min(1).max(12000),
+      encrypted: z.boolean().optional(),
+      iv: z.string().max(400).optional(),
+      keyVersion: z.number().int().optional(),
+    }),
+  ),
   asyncHandler(async (req, res) => {
     const existing = await prisma.message.findUnique({ where: { id: req.params.id } });
     if (!existing) throw notFound('Message introuvable');
     if (existing.authorId !== req.user!.id) throw forbidden('Vous ne pouvez modifier que vos messages');
+    if (existing.encrypted && !req.body.encrypted) throw forbidden('Ce message est chiffré');
 
     const message = await prisma.message.update({
       where: { id: req.params.id },
-      data: { body: req.body.body, editedAt: new Date() },
+      data: {
+        body: req.body.body,
+        editedAt: new Date(),
+        ...(req.body.encrypted ? { iv: req.body.iv, keyVersion: req.body.keyVersion } : {}),
+      },
       include: messageInclude,
     });
     getIO()?.to(`channel:${existing.channelId}`).emit('message:updated', message);

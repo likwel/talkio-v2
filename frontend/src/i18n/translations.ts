@@ -12,9 +12,9 @@ type Dict = Record<string, string>;
 const fr: Dict = {
   // --- Navigation ---
   'nav.messaging': 'Messagerie',
-  'nav.projects': 'Projet',
+  'nav.projects': 'Projets',
   'nav.calendar': 'Agenda',
-  'nav.meal': 'MEAL',
+  'nav.meal': 'Suivi-évaluation',
   'nav.forms': 'Collecte',
 
   // --- Actions communes ---
@@ -253,7 +253,7 @@ const en: Dict = {
   'nav.messaging': 'Messages',
   'nav.projects': 'Projects',
   'nav.calendar': 'Calendar',
-  'nav.meal': 'MEAL',
+  'nav.meal': 'Monitoring',
   'nav.forms': 'Forms',
 
   'common.save': 'Save',
@@ -483,7 +483,7 @@ const mg: Dict = {
   'nav.messaging': 'Hafatra',
   'nav.projects': 'Tetikasa',
   'nav.calendar': 'Kalandrie',
-  'nav.meal': 'MEAL',
+  'nav.meal': 'Fanaraha-maso',
   'nav.forms': 'Fanangonana',
 
   'common.save': 'Tehirizo',

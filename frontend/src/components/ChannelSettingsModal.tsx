@@ -6,6 +6,8 @@ import ColorPicker from '@/components/ColorPicker';
 import { api } from '@/lib/api';
 import { useWorkspace } from '@/context/WorkspaceContext';
 import { useAuth } from '@/context/AuthContext';
+import { useCrypto } from '@/context/CryptoContext';
+import { useToast } from '@/context/ToastContext';
 import { useProfile } from '@/context/ProfileContext';
 import { useTheme } from '@/context/ThemeContext';
 import { WALLPAPERS } from '@/lib/wallpapers';
@@ -199,6 +201,21 @@ export default function ChannelSettingsModal({
           </span>
         </label>
 
+        {channel && channel.type !== 'PUBLIC' && (
+          <E2EESection
+            channel={detail.data ?? channel}
+            members={(detail.data?.members ?? []).map((m) => ({
+              userId: m.userId,
+              fullName: m.user?.fullName ?? m.userId,
+            }))}
+            selfId={user?.id}
+            onChanged={() => {
+              detail.refetch();
+              onChanged();
+            }}
+          />
+        )}
+
         {!isDirect && (
           <div className="border-t border-[var(--outline)] pt-3">
             <div className="mb-1 text-xs font-bold uppercase tracking-wide text-[var(--text-dim)]">
@@ -340,5 +357,70 @@ function PermRow({
       <span className="grid place-items-center">{box(perm.canRead && perm.canView, 'canRead')}</span>
       <span className="grid place-items-center">{box(perm.canWrite && perm.canView, 'canWrite')}</span>
     </>
+  );
+}
+
+/** Activation du chiffrement de bout en bout pour une conversation privée / directe. */
+function E2EESection({
+  channel,
+  members,
+  selfId,
+  onChanged,
+}: {
+  channel: Channel;
+  members: { userId: string; fullName: string }[];
+  selfId?: string;
+  onChanged: () => void;
+}) {
+  const { status, enableChannelE2EE } = useCrypto();
+  const { toast } = useToast();
+  const [busy, setBusy] = useState(false);
+
+  const on = !!channel.e2ee;
+  const ids = Array.from(new Set([...(members.map((m) => m.userId)), ...(selfId ? [selfId] : [])]));
+
+  async function enable() {
+    setBusy(true);
+    try {
+      await enableChannelE2EE(channel.id, ids);
+      toast('Chiffrement de bout en bout activé', 'success');
+      onChanged();
+    } catch (e: any) {
+      if (e?.message === 'missing-keys') {
+        const names = (e.missing as string[])
+          .map((id) => members.find((m) => m.userId === id)?.fullName ?? 'un membre')
+          .join(', ');
+        toast(`Ces membres n'ont pas encore activé le chiffrement : ${names}`, 'error');
+      } else {
+        toast(e?.response?.data?.error ?? e?.message ?? 'Échec de l’activation', 'error');
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-[var(--outline)] p-2.5">
+      <span className="block text-sm font-medium">Chiffrement de bout en bout</span>
+      {on ? (
+        <p className="mt-0.5 text-xs text-[var(--text-dim)]">
+          Actif{channel.e2eeSince ? ` depuis le ${new Date(channel.e2eeSince).toLocaleDateString('fr-FR')}` : ''}.
+          Les messages antérieurs restent en clair. Le chiffrement ne peut pas être désactivé.
+        </p>
+      ) : status !== 'ready' ? (
+        <p className="mt-0.5 text-xs text-[var(--text-dim)]">
+          Configurez d’abord votre chiffrement dans Paramètres → Sécurité.
+        </p>
+      ) : (
+        <>
+          <p className="mt-0.5 text-xs text-[var(--text-dim)]">
+            Le serveur ne pourra plus lire les messages. Pièces jointes et recherche serveur désactivées.
+          </p>
+          <button type="button" className="btn-primary btn-sm mt-2" disabled={busy} onClick={enable}>
+            {busy ? 'Activation…' : 'Activer'}
+          </button>
+        </>
+      )}
+    </div>
   );
 }

@@ -78,7 +78,7 @@ router.post(
           create: [
             { name: 'A faire', position: 0 },
             { name: 'En cours', position: 1 },
-            { name: 'Termine', position: 2 },
+            { name: 'Terminé', position: 2 },
           ],
         },
       },

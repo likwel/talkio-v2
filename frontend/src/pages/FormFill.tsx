@@ -60,7 +60,7 @@ export default function FormFill() {
   return (
     <div className="page max-w-2xl space-y-5">
       <div className="flex items-center gap-2">
-        <Link to="/forms" className="icon-btn" aria-label="Retour à la collecte">
+        <Link to="/meal?tab=forms" className="icon-btn" aria-label="Retour à la collecte">
           <IconBack className="h-5 w-5" />
         </Link>
         <h1 className="page-title truncate">{form.title}</h1>

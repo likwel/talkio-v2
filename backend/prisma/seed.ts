@@ -59,7 +59,7 @@ async function main() {
         create: [
           { name: 'A faire', position: 0 },
           { name: 'En cours', position: 1 },
-          { name: 'Termine', position: 2 },
+          { name: 'Terminé', position: 2 },
         ],
       },
     },
@@ -162,7 +162,7 @@ async function main() {
   });
 
   // eslint-disable-next-line no-console
-  console.log('Seed termine. Comptes: alice@talkio.dev / bob@talkio.dev (mot de passe: password123)');
+  console.log('Seed terminé. Comptes: alice@talkio.dev / bob@talkio.dev (mot de passe: password123)');
 }
 
 main()

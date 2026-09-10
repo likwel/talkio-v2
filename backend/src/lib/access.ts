@@ -18,9 +18,15 @@ export async function requireWorkspaceAdmin(userId: string, workspaceId: string)
   return member;
 }
 
-/** Ids de tous les espaces dont l'utilisateur est membre. */
+/**
+ * Ids des espaces dont l'utilisateur est membre — hors espaces personnels
+ * d'autrui (où il n'est qu'invité pour un message direct).
+ */
 export async function myWorkspaceIds(userId: string): Promise<string[]> {
-  const rows = await prisma.workspaceMember.findMany({ where: { userId }, select: { workspaceId: true } });
+  const rows = await prisma.workspaceMember.findMany({
+    where: { userId, OR: [{ role: 'OWNER' }, { workspace: { isPersonal: false } }] },
+    select: { workspaceId: true },
+  });
   return rows.map((r) => r.workspaceId);
 }
 

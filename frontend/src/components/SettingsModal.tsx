@@ -7,6 +7,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useTheme, type ThemePref } from '@/context/ThemeContext';
 import { useDialog } from '@/context/DialogContext';
 import { useToast } from '@/context/ToastContext';
+import { useCrypto } from '@/context/CryptoContext';
 import { useI18n, LANGS } from '@/i18n';
 import { PRESENCE_OPTIONS, DOT_COLOR } from '@/context/PresenceContext';
 import {
@@ -416,6 +417,8 @@ function SecurityTab() {
   }
 
   return (
+    <div className="space-y-6">
+    <EncryptionCard />
     <form onSubmit={submit} className="space-y-4">
       <h3 className="font-display text-md font-bold">{t('settings.security.title')}</h3>
       {msg && <Notice kind={msg.kind}>{msg.text}</Notice>}
@@ -446,6 +449,115 @@ function SecurityTab() {
         {busy ? t('settings.security.submitting') : t('settings.security.submit')}
       </button>
     </form>
+    </div>
+  );
+}
+
+/** Chiffrement de bout en bout : créer / déverrouiller l'identité de l'appareil. */
+function EncryptionCard() {
+  const { status, supported, setup, unlock, lockDevice } = useCrypto();
+  const [pw, setPw] = useState('');
+  const [ack, setAck] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  async function run(fn: () => Promise<void>) {
+    setErr('');
+    setBusy(true);
+    try {
+      await fn();
+      setPw('');
+      setAck(false);
+    } catch (e: any) {
+      setErr(
+        e?.name === 'OperationError'
+          ? 'Mot de passe incorrect.'
+          : e?.response?.data?.error ?? e?.message ?? 'Échec.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const box = 'rounded-xl border border-[var(--outline)] p-4 space-y-3';
+
+  if (!supported) {
+    return (
+      <div className={box}>
+        <h3 className="font-display text-md font-bold">Chiffrement de bout en bout</h3>
+        <Notice kind="err">Votre navigateur ne prend pas en charge WebCrypto.</Notice>
+      </div>
+    );
+  }
+
+  return (
+    <div className={box}>
+      <h3 className="font-display text-md font-bold">Chiffrement de bout en bout</h3>
+      <p className="text-xs text-[var(--text-dim)]">
+        Chiffre les messages des conversations directes et des groupes privés. Le serveur ne peut
+        plus les lire.
+      </p>
+
+      {status === 'loading' && <p className="text-sm text-[var(--text-dim)]">Chargement…</p>}
+
+      {status === 'ready' && (
+        <>
+          <Notice kind="ok">Chiffrement actif sur cet appareil.</Notice>
+          <button type="button" className="btn-outlined btn-sm" onClick={lockDevice}>
+            Oublier la clé sur cet appareil
+          </button>
+        </>
+      )}
+
+      {(status === 'absent' || status === 'locked') && (
+        <>
+          {status === 'absent' && (
+            <label className="flex items-start gap-2 rounded-lg bg-amber-50 p-2.5 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={ack}
+                onChange={(e) => setAck(e.target.checked)}
+              />
+              <span>
+                Je comprends que si j'oublie ce mot de passe (ou qu'un administrateur le
+                réinitialise), <strong>tous mes messages chiffrés deviendront définitivement
+                illisibles</strong>.
+              </span>
+            </label>
+          )}
+          <input
+            className="input"
+            type="password"
+            autoComplete="current-password"
+            placeholder={status === 'absent' ? 'Choisir un mot de passe de chiffrement' : 'Mot de passe de chiffrement'}
+            value={pw}
+            onChange={(e) => setPw(e.target.value)}
+            minLength={8}
+          />
+          {err && <Notice kind="err">{err}</Notice>}
+          {status === 'absent' ? (
+            <button
+              type="button"
+              className="btn-primary btn-sm"
+              disabled={busy || pw.length < 8 || !ack}
+              onClick={() => run(() => setup(pw))}
+            >
+              {busy ? 'Activation…' : 'Activer le chiffrement'}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="btn-primary btn-sm"
+              disabled={busy || pw.length < 8}
+              onClick={() => run(() => unlock(pw))}
+            >
+              {busy ? 'Déverrouillage…' : 'Déverrouiller sur cet appareil'}
+            </button>
+          )}
+        </>
+      )}
+    </div>
   );
 }
 

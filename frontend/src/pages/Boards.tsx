@@ -86,7 +86,7 @@ export default function Boards() {
       <PageHeader icon={<IconKanban className="h-6 w-6 shrink-0 text-[var(--accent)]" />} title="Projets">
         <button className="btn-primary" onClick={() => setAddOpen((v) => !v)}>
           {addOpen ? <IconClose className="h-5 w-5" /> : <IconAdd className="h-5 w-5" />}
-          <span className="hidden sm:inline">{addOpen ? 'Fermer' : 'Nouveau projet'}</span>
+          <span className="hidden sm:inline">{addOpen ? 'Fermer' : 'Créer'}</span>
         </button>
       </PageHeader>
 

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
@@ -20,10 +20,17 @@ import {
 import ViewToggle, { useViewMode } from '@/components/ViewToggle';
 import EmptyState from '@/components/EmptyState';
 import Pagination, { usePagination } from '@/components/Pagination';
-import PageHeader from '@/components/PageHeader';
 import WorkspaceTag from '@/components/WorkspaceTag';
 
 type Status = FormDef['status'];
+
+const STATUS: Record<Status, { label: string; style: string }> = {
+  DRAFT: { label: 'Brouillon', style: 'bg-[var(--surface-2)] text-[var(--text-dim)]' },
+  PUBLISHED: { label: 'Publié', style: 'bg-[var(--accent-soft)] text-[var(--accent-strong)]' },
+  CLOSED: { label: 'Fermé', style: 'bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-300' },
+};
+
+const publicUrl = (f: FormDef) => `${window.location.origin}/f/${f.publicCode ?? f.id}`;
 
 async function downloadCsv(formId: string, title: string) {
   const res = await api.get(`/forms/${formId}/export.csv`, { responseType: 'blob' });
@@ -35,15 +42,7 @@ async function downloadCsv(formId: string, title: string) {
   URL.revokeObjectURL(url);
 }
 
-const STATUS: Record<Status, { label: string; style: string }> = {
-  DRAFT: { label: 'Brouillon', style: 'bg-[var(--surface-2)] text-[var(--text-dim)]' },
-  PUBLISHED: { label: 'Publié', style: 'bg-[var(--accent-soft)] text-[var(--accent-strong)]' },
-  CLOSED: { label: 'Fermé', style: 'bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-300' },
-};
-
-const publicUrl = (f: FormDef) => `${window.location.origin}/f/${f.publicCode ?? f.id}`;
-
-export default function Forms() {
+export default function FormsPanel() {
   const { workspaces, personal } = useWorkspace();
   const qc = useQueryClient();
   const dialog = useDialog();
@@ -51,6 +50,17 @@ export default function Forms() {
   const [view, setView] = useViewMode('forms');
   const importRef = useRef<HTMLInputElement>(null);
   const targetWs = personal?.id ?? workspaces[0]?.id;
+
+  const forms = useQuery({
+    queryKey: ['forms', 'all'],
+    queryFn: async () => (await api.get<FormDef[]>('/forms')).data,
+  });
+
+  const setStatus = useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: Status }) =>
+      (await api.put(`/forms/${id}`, { status })).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['forms', 'all'] }),
+  });
 
   async function importDefinition(file: File | undefined) {
     if (!file || !targetWs) return;
@@ -64,17 +74,6 @@ export default function Forms() {
       if (importRef.current) importRef.current.value = '';
     }
   }
-
-  const forms = useQuery({
-    queryKey: ['forms', 'all'],
-    queryFn: async () => (await api.get<FormDef[]>('/forms')).data,
-  });
-
-  const setStatus = useMutation({
-    mutationFn: async ({ id, status }: { id: string; status: Status }) =>
-      (await api.put(`/forms/${id}`, { status })).data,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['forms', 'all'] }),
-  });
 
   async function copyLink(f: FormDef) {
     try {
@@ -150,38 +149,43 @@ export default function Forms() {
     </>
   );
 
-  const total = forms.data?.length ?? 0;
-  const pg = usePagination(forms.data ?? [], 12, view);
+  const list = forms.data ?? [];
+  const totals = useMemo(
+    () => ({
+      published: list.filter((f) => f.status === 'PUBLISHED').length,
+      responses: list.reduce((s, f) => s + (f._count?.responses ?? 0), 0),
+    }),
+    [list],
+  );
+  const pg = usePagination(list, 12, view);
 
   return (
-    <div className="flex h-full flex-col">
-      <PageHeader icon={<IconForms className="h-6 w-6 shrink-0 text-[var(--accent)]" />} title="Collecte">
-        <button className="btn-outlined" onClick={() => importRef.current?.click()}>
-          <IconAttach className="h-4 w-4" />
-          <span className="hidden sm:inline">Importer</span>
-        </button>
-        <input
-          ref={importRef}
-          type="file"
-          accept=".json,application/json"
-          className="hidden"
-          onChange={(e) => importDefinition(e.target.files?.[0])}
-        />
-        <Link to="/forms/new" className="btn-primary">
-          <IconAdd className="h-5 w-5" />
-          <span className="hidden sm:inline">Nouveau formulaire</span>
-        </Link>
-      </PageHeader>
-
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="page max-w-8xl space-y-5">
-      {/* Barre d'outils */}
-      <div className="flex items-center justify-between">
-        <span className="text-sm font-semibold text-[var(--text-dim)]">{total} formulaire(s)</span>
-        <ViewToggle value={view} onChange={setView} />
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Chip>{list.length} formulaire(s)</Chip>
+          <Chip dim>{totals.published} publié(s)</Chip>
+          <Chip dim>{totals.responses} réponse(s)</Chip>
+        </div>
+        <div className="ml-auto flex items-center gap-2">
+          <button className="btn-outlined btn-sm" onClick={() => importRef.current?.click()}>
+            <IconAttach className="h-4 w-4" /> Importer
+          </button>
+          <input
+            ref={importRef}
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            onChange={(e) => importDefinition(e.target.files?.[0])}
+          />
+          <Link to="/forms/new" className="btn-primary btn-sm">
+            <IconAdd className="h-4 w-4" /> Créer un formulaire
+          </Link>
+          <ViewToggle value={view} onChange={setView} />
+        </div>
       </div>
 
-      {total === 0 && !forms.isLoading ? (
+      {list.length === 0 && !forms.isLoading ? (
         <EmptyState
           icon={<IconForms className="h-7 w-7" />}
           title="Aucun formulaire"
@@ -193,11 +197,11 @@ export default function Forms() {
           }
         />
       ) : view === 'grid' ? (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {pg.slice.map((f) => (
             <div
               key={f.id}
-              className="card group flex flex-col gap-3 transition hover:shadow-elevation-2"
+              className="card group flex flex-col gap-3 transition hover:bg-[var(--surface-2)]"
             >
               <div className="flex items-start justify-between gap-2">
                 <span className="min-w-0 font-semibold item-title">{f.title}</span>
@@ -207,11 +211,12 @@ export default function Forms() {
                   {STATUS[f.status].label}
                 </span>
               </div>
-              <WorkspaceTag ws={f.workspace} />
-              <div className="text-xs text-[var(--text-dim)]">
-                {f._count?.fields ?? 0} champs
-                {f._count?.sections ? ` · ${f._count.sections} sections` : ''} · {f._count?.responses ?? 0} réponses
-                {f.status === 'PUBLISHED' && f.version ? ` · v${f.version}` : ''}
+              <div className="flex flex-wrap items-center gap-1.5">
+                <WorkspaceTag ws={f.workspace} />
+                <Chip dim>{f._count?.fields ?? 0} champs</Chip>
+                {f._count?.sections ? <Chip dim>{f._count.sections} sections</Chip> : null}
+                <Chip dim>{f._count?.responses ?? 0} réponses</Chip>
+                {f.status === 'PUBLISHED' && f.version ? <Chip dim>v{f.version}</Chip> : null}
               </div>
               <div className="flex flex-wrap gap-1.5">{primaryActions(f)}</div>
               <div className="mt-auto flex flex-wrap gap-1 border-t border-[var(--outline)] pt-2 text-sm">
@@ -235,7 +240,7 @@ export default function Forms() {
               <span className="min-w-0 flex-1 truncate font-medium item-title">{f.title}</span>
               <WorkspaceTag ws={f.workspace} className="hidden sm:inline-flex" />
               <span className="shrink-0 text-2xs text-[var(--text-dim)]">
-                {f._count?.fields ?? 0} champs · {f._count?.responses ?? 0} rep.
+                {f._count?.fields ?? 0} champs · {f._count?.responses ?? 0} rép.
               </span>
               <div className="flex w-full flex-wrap gap-1.5 sm:w-auto">
                 {primaryActions(f)}
@@ -254,8 +259,19 @@ export default function Forms() {
         start={pg.start}
         end={pg.end}
       />
-        </div>
-      </div>
     </div>
+  );
+}
+
+function Chip({ children, dim }: { children: React.ReactNode; dim?: boolean }) {
+  return (
+    <span
+      className={
+        'inline-flex items-center rounded-md px-1.5 py-0.5 text-2xs font-semibold ' +
+        (dim ? 'bg-[var(--surface-2)] text-[var(--text-dim)]' : 'bg-[var(--accent-soft)] text-[var(--accent-strong)]')
+      }
+    >
+      {children}
+    </span>
   );
 }

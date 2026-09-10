@@ -35,6 +35,11 @@ model User {
   assignedCards          CardAssignee[]
   comments               Comment[]
   measurements           MealMeasurement[]
+  /// Chiffrement de bout en bout : clé publique + clé privée chiffrée (jamais lisible côté serveur).
+  cryptoPublicKey        String?
+  cryptoPrivateKeyEnc    String?
+  cryptoKeyCreatedAt     DateTime?
+  channelKeys            ChannelKey[]
   formResponses          FormResponse[]       @relation("FormResponseSubmitter")
   reviewedFormResponses  FormResponse[]       @relation("FormResponseReviewer")
   createdForms           Form[]               @relation("FormCreatedBy")
@@ -153,14 +158,40 @@ model Channel {
   createdById  String?
   creator      User?       @relation("ChannelCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   type         ChannelType @default(PUBLIC)
+  /// Chiffrement de bout en bout (DM / groupes privés uniquement).
+  e2ee         Boolean     @default(false)
+  /// Version courante de la clé de conversation (0 = non chiffré).
+  e2eeVersion  Int         @default(0)
+  /// Les messages antérieurs à cette date restent en clair.
+  e2eeSince    DateTime?
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 
-  members  ChannelMember[]
-  messages Message[]
-  calls    Call[]
+  members     ChannelMember[]
+  messages    Message[]
+  calls       Call[]
+  channelKeys ChannelKey[]
 
   @@index([workspaceId])
+}
+
+/// Clé de conversation chiffrée pour un membre donné (une par version de clé).
+model ChannelKey {
+  id                 String   @id @default(cuid())
+  channelId          String
+  channel            Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  userId             String
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  version            Int
+  /// Clé publique ECDH éphémère (base64 raw) utilisée pour l'enveloppe.
+  ephemeralPublicKey String
+  iv                 String
+  /// Clé AES de conversation, chiffrée (base64).
+  wrappedKey         String
+  createdAt          DateTime @default(now())
+
+  @@unique([channelId, userId, version])
+  @@index([userId])
 }
 
 model ChannelMember {
@@ -202,6 +233,10 @@ model Message {
   replies       Message[]   @relation("MessageThread")
   /// Nom de l'auteur d'origine quand le message a ete transfere (repost).
   forwardedFrom String?
+  /// Chiffrement de bout en bout : `body` contient alors le texte chiffré (base64).
+  encrypted     Boolean     @default(false)
+  iv            String?
+  keyVersion    Int?
   editedAt      DateTime?
   createdAt     DateTime    @default(now())
 

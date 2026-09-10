@@ -42,6 +42,10 @@ export interface Channel {
   /** Createur : seul a pouvoir changer les accuses de lecture. */
   createdById?: string | null;
   type: 'PUBLIC' | 'PRIVATE' | 'DIRECT';
+  /** Chiffrement de bout en bout (DM / groupes prives). */
+  e2ee?: boolean;
+  e2eeVersion?: number;
+  e2eeSince?: string | null;
   _count?: { messages: number; members: number };
   members?: {
     userId: string;
@@ -103,7 +107,11 @@ export interface Automation {
 export interface Message {
   id: string;
   channelId: string;
+  /** Si `encrypted`, contient le texte chiffré (base64). */
   body: string;
+  encrypted?: boolean;
+  iv?: string | null;
+  keyVersion?: number | null;
   createdAt: string;
   editedAt?: string | null;
   author: Pick<User, 'id' | 'fullName' | 'avatarUrl' | 'presenceStatus'>;
@@ -119,7 +127,14 @@ export interface Message {
   } | null;
   parentId?: string | null;
   /** Message cite (fonction « Repondre »). */
-  parent?: { id: string; body: string; author: { id: string; fullName: string } } | null;
+  parent?: {
+    id: string;
+    body: string;
+    encrypted?: boolean;
+    iv?: string | null;
+    keyVersion?: number | null;
+    author: { id: string; fullName: string };
+  } | null;
   /** Nom de l'auteur d'origine si le message a ete transfere. */
   forwardedFrom?: string | null;
   _count?: { replies: number };

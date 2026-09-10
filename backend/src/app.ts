@@ -18,6 +18,7 @@ import calendarRoutes from './modules/calendar/calendar.routes';
 import friendRoutes from './modules/friends/friends.routes';
 import userRoutes from './modules/users/users.routes';
 import automationRoutes from './modules/automations/automations.routes';
+import cryptoRoutes from './modules/crypto/crypto.routes';
 import publicRoutes from './modules/public/public.routes';
 import uploadRoutes, { UPLOAD_DIR } from './modules/uploads/uploads.routes';
 
@@ -46,6 +47,7 @@ export function createApp() {
   app.use('/api/friends', authenticate, friendRoutes);
   app.use('/api/users', authenticate, userRoutes);
   app.use('/api/automations', authenticate, automationRoutes);
+  app.use('/api/crypto', authenticate, cryptoRoutes);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

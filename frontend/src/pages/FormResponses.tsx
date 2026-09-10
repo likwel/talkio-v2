@@ -103,7 +103,7 @@ export default function FormResponses() {
   return (
     <div className="page space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <Link to="/forms" className="icon-btn" aria-label="Retour">
+        <Link to="/meal?tab=forms" className="icon-btn" aria-label="Retour">
           <IconBack className="h-5 w-5" />
         </Link>
         <h1 className="page-title truncate">{fd?.title}</h1>

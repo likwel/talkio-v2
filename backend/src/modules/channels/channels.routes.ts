@@ -6,6 +6,7 @@ import { prisma } from '../../lib/prisma';
 import { requireWorkspaceMember } from '../../lib/access';
 import { badRequest, forbidden, notFound } from '../../lib/http';
 import { runAutomations } from '../automations/dispatch';
+import { getIO } from '../../realtime/socket';
 
 const router = Router();
 
@@ -29,15 +30,27 @@ router.get(
     const me = req.user!.id;
     const workspaceId = String(req.query.workspaceId);
     await requireWorkspaceMember(me, workspaceId);
+    const ws = await prisma.workspace.findUnique({
+      where: { id: workspaceId },
+      select: { isPersonal: true },
+    });
+
+    const baseWhere = {
+      workspaceId,
+      AND: [
+        { OR: [{ type: 'PUBLIC' as const }, { members: { some: { userId: me } } }] },
+        // Salon masque si ma permission "vue" a ete retiree.
+        { NOT: { members: { some: { userId: me, canView: false } } } },
+      ],
+    };
+    // Espace personnel : on y agrège TOUTES ses conversations directes,
+    // quel que soit l'espace où elles ont été créées.
+    const where = ws?.isPersonal
+      ? { OR: [baseWhere, { type: 'DIRECT' as const, members: { some: { userId: me } } }] }
+      : baseWhere;
+
     const channels = await prisma.channel.findMany({
-      where: {
-        workspaceId,
-        AND: [
-          { OR: [{ type: 'PUBLIC' }, { members: { some: { userId: me } } }] },
-          // Salon masque si ma permission "vue" a ete retiree.
-          { NOT: { members: { some: { userId: me, canView: false } } } },
-        ],
-      },
+      where,
       include: {
         _count: { select: { messages: true, members: true } },
         members: {
@@ -172,15 +185,20 @@ router.post(
     if (others.length === 0) throw badRequest('Au moins un participant est requis');
 
     await requireWorkspaceMember(me, workspaceId);
-    await Promise.all(others.map((id) => requireWorkspaceMember(id, workspaceId)));
+    const directWs = await prisma.workspace.findUnique({
+      where: { id: workspaceId },
+      select: { isPersonal: true },
+    });
+    const isPersonalWs = !!directWs?.isPersonal;
 
     const memberIds = [me, ...others];
 
-    // 1:1 -> reutilise la conversation existante
+    // 1:1 -> reutilise la conversation existante. Depuis l'espace personnel,
+    // on cherche la conversation dans N'IMPORTE quel espace (évite les doublons).
     if (others.length === 1) {
       const existing = await prisma.channel.findFirst({
         where: {
-          workspaceId,
+          ...(isPersonalWs ? {} : { workspaceId }),
           type: 'DIRECT',
           name: null,
           members: { every: { userId: { in: memberIds } } },
@@ -189,6 +207,33 @@ router.post(
         include: memberInclude,
       });
       if (existing && existing.members.length === 2) return res.json(existing);
+    }
+
+    if (isPersonalWs) {
+      // Espace personnel : les autres doivent être des amis. On les rattache en
+      // invités (GUEST) : accès à la conversation, sans voir l'espace personnel.
+      const fr = await prisma.friendship.findMany({
+        where: {
+          status: 'ACCEPTED',
+          OR: [
+            { requesterId: me, addresseeId: { in: others } },
+            { addresseeId: me, requesterId: { in: others } },
+          ],
+        },
+        select: { requesterId: true, addresseeId: true },
+      });
+      const friendIds = new Set(
+        fr.flatMap((f) => [f.requesterId, f.addresseeId]).filter((id) => id !== me),
+      );
+      for (const id of others) {
+        if (!friendIds.has(id)) throw forbidden('Vous devez être amis pour démarrer cette conversation');
+      }
+      await prisma.workspaceMember.createMany({
+        data: others.map((userId) => ({ workspaceId, userId, role: 'GUEST' as const })),
+        skipDuplicates: true,
+      });
+    } else {
+      await Promise.all(others.map((id) => requireWorkspaceMember(id, workspaceId)));
     }
 
     const channel = await prisma.channel.create({
@@ -330,6 +375,84 @@ router.post(
       create: { channelId: channel.id, userId: req.user!.id },
     });
     res.json(member);
+  }),
+);
+
+// --- Chiffrement de bout en bout (DM / groupes privés) --------------------
+
+const keyEnvelope = z.object({
+  userId: z.string(),
+  ephemeralPublicKey: z.string().min(1).max(4000),
+  iv: z.string().min(1).max(400),
+  wrappedKey: z.string().min(1).max(4000),
+});
+
+/**
+ * Active (ou fait tourner) le chiffrement d'une conversation : le client fournit
+ * la clé de conversation, chiffrée séparément pour chaque membre. Le serveur ne
+ * voit que des enveloppes opaques.
+ */
+router.post(
+  '/:id/e2ee',
+  validate(z.object({ version: z.number().int().min(1), keys: z.array(keyEnvelope).min(1).max(200) })),
+  asyncHandler(async (req, res) => {
+    const channel = await requireChannelAccess(req.user!.id, req.params.id);
+    if (channel.type === 'PUBLIC') throw badRequest('Le chiffrement est réservé aux conversations privées');
+    if (req.body.version <= channel.e2eeVersion) throw badRequest('Version de clé obsolète');
+
+    const members = await prisma.channelMember.findMany({
+      where: { channelId: channel.id },
+      select: { userId: true },
+    });
+    const memberIds = new Set(members.map((m) => m.userId));
+    const provided = new Set(req.body.keys.map((k: z.infer<typeof keyEnvelope>) => k.userId));
+    for (const id of memberIds) {
+      if (!provided.has(id)) throw badRequest('Clé manquante pour un membre de la conversation');
+    }
+
+    await prisma.$transaction([
+      prisma.channelKey.deleteMany({ where: { channelId: channel.id, version: req.body.version } }),
+      prisma.channelKey.createMany({
+        data: req.body.keys
+          .filter((k: z.infer<typeof keyEnvelope>) => memberIds.has(k.userId))
+          .map((k: z.infer<typeof keyEnvelope>) => ({
+            channelId: channel.id,
+            userId: k.userId,
+            version: req.body.version,
+            ephemeralPublicKey: k.ephemeralPublicKey,
+            iv: k.iv,
+            wrappedKey: k.wrappedKey,
+          })),
+      }),
+      prisma.channel.update({
+        where: { id: channel.id },
+        data: {
+          e2ee: true,
+          e2eeVersion: req.body.version,
+          e2eeSince: channel.e2eeSince ?? new Date(),
+        },
+      }),
+    ]);
+
+    getIO()?.to(`channel:${channel.id}`).emit('channel:e2ee', {
+      channelId: channel.id,
+      version: req.body.version,
+    });
+    res.json({ ok: true, version: req.body.version });
+  }),
+);
+
+/** Les enveloppes de clé de l'utilisateur courant pour cette conversation. */
+router.get(
+  '/:id/e2ee/keys',
+  asyncHandler(async (req, res) => {
+    await requireChannelAccess(req.user!.id, req.params.id);
+    const keys = await prisma.channelKey.findMany({
+      where: { channelId: req.params.id, userId: req.user!.id },
+      orderBy: { version: 'asc' },
+      select: { version: true, ephemeralPublicKey: true, iv: true, wrappedKey: true },
+    });
+    res.json(keys);
   }),
 );
 
