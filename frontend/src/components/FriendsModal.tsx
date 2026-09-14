@@ -37,9 +37,13 @@ export default function FriendsModal({
     incoming: [],
     outgoing: [],
   });
-  const [email, setEmail] = useState('');
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<User[]>([]);
+  const [searching, setSearching] = useState(false);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const isEmail = /\S+@\S+\.\S+/.test(query.trim());
 
   async function refresh() {
     const [f, r] = await Promise.all([api.get<User[]>('/friends'), api.get('/friends/requests')]);
@@ -58,20 +62,49 @@ export default function FriendsModal({
     };
   }, [open]);
 
-  async function sendRequest(e: FormEvent) {
-    e.preventDefault();
+  // Recherche live par nom ou e-mail (debounce).
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 2) {
+      setResults([]);
+      return;
+    }
+    setSearching(true);
+    const id = setTimeout(async () => {
+      try {
+        const r = await api.get<User[]>('/friends/search', { params: { q } });
+        setResults(r.data);
+      } catch {
+        setResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 250);
+    return () => clearTimeout(id);
+  }, [query]);
+
+  async function request(payload: { userId?: string; email?: string }) {
     setBusy(true);
     setMsg(null);
     try {
-      await api.post('/friends/request', { email: email.trim().toLowerCase() });
-      setMsg({ kind: 'ok', text: 'Demande envoyee.' });
-      setEmail('');
+      const r = await api.post('/friends/request', payload);
+      setMsg({
+        kind: 'ok',
+        text: r.status === 202 ? "Invitation envoyee par e-mail." : 'Demande envoyee.',
+      });
+      setQuery('');
+      setResults([]);
       refresh();
     } catch (err: any) {
       setMsg({ kind: 'err', text: err?.response?.data?.error ?? 'Echec de la demande' });
     } finally {
       setBusy(false);
     }
+  }
+
+  function sendByEmail(e: FormEvent) {
+    e.preventDefault();
+    if (isEmail) request({ email: query.trim().toLowerCase() });
   }
 
   const accept = (id: string) => api.post(`/friends/${id}/accept`).then(refresh);
@@ -112,7 +145,7 @@ export default function FriendsModal({
       </div>
 
       {tab === 'add' && (
-        <form onSubmit={sendRequest} className="space-y-3">
+        <div className="space-y-3">
           {msg && (
             <div
               className={clsx(
@@ -125,21 +158,54 @@ export default function FriendsModal({
               {msg.text}
             </div>
           )}
-          <label className="block text-xs font-semibold text-[var(--text-dim)]">
-            Email de la personne
-            <input
-              className="input mt-1"
-              type="email"
-              placeholder="ami@exemple.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
-          </label>
-          <button className="btn-primary" disabled={busy}>
-            <IconPersonAdd className="h-4 w-4" /> Envoyer la demande
-          </button>
-        </form>
+          <form onSubmit={sendByEmail}>
+            <label className="block text-xs font-semibold text-[var(--text-dim)]">
+              Nom d'utilisateur ou adresse e-mail
+              <input
+                autoFocus
+                className="input mt-1"
+                placeholder="Rechercher par nom, ou saisir un e-mail…"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </label>
+          </form>
+
+          {query.trim().length >= 2 && (
+            <ul className="max-h-72 overflow-y-auto">
+              {results.map((u) => (
+                <Row key={u.id} user={u}>
+                  <button
+                    className="btn-primary btn-sm"
+                    disabled={busy}
+                    onClick={() => request({ userId: u.id })}
+                  >
+                    <IconPersonAdd className="h-4 w-4" /> Ajouter
+                  </button>
+                </Row>
+              ))}
+              {!searching && results.length === 0 && !isEmail && (
+                <li className="px-2 py-3 text-sm text-[var(--text-dim)]">
+                  Aucun utilisateur « {query.trim()} » sur la plateforme.
+                </li>
+              )}
+              {isEmail && (
+                <li className="mt-1 flex items-center justify-between gap-2 rounded-lg bg-[var(--surface-2)] px-3 py-2 text-sm">
+                  <span className="min-w-0 truncate">
+                    Inviter <span className="font-semibold">{query.trim()}</span> par e-mail
+                  </span>
+                  <button
+                    className="btn-primary btn-sm shrink-0"
+                    disabled={busy}
+                    onClick={() => request({ email: query.trim().toLowerCase() })}
+                  >
+                    <IconPersonAdd className="h-4 w-4" /> Inviter
+                  </button>
+                </li>
+              )}
+            </ul>
+          )}
+        </div>
       )}
 
       {tab === 'requests' && (

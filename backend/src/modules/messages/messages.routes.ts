@@ -26,6 +26,16 @@ const messageInclude = {
   attachments: true,
   parent: parentSelect,
   call: { select: { roomId: true, type: true, status: true, startedAt: true, endedAt: true } },
+  form: {
+    select: {
+      id: true,
+      title: true,
+      description: true,
+      status: true,
+      publicCode: true,
+      _count: { select: { fields: true, responses: true } },
+    },
+  },
 } as const;
 
 router.get(
@@ -79,6 +89,7 @@ router.post(
         body: z.string().max(12000).optional().default(''),
         parentId: z.string().optional(),
         forwardedFrom: z.string().max(120).optional(),
+        formId: z.string().optional(),
         attachments: z.array(attachmentSchema).max(10).optional(),
         // Chiffrement de bout en bout : `body` est alors le texte chiffré (base64).
         encrypted: z.boolean().optional(),
@@ -86,9 +97,10 @@ router.post(
         keyVersion: z.number().int().optional(),
         mentionUserIds: z.array(z.string()).max(50).optional(),
       })
-      .refine((v) => v.body.trim().length > 0 || (v.attachments?.length ?? 0) > 0, {
-        message: 'Message vide',
-      }),
+      .refine(
+        (v) => v.body.trim().length > 0 || (v.attachments?.length ?? 0) > 0 || !!v.formId,
+        { message: 'Message vide' },
+      ),
   ),
   asyncHandler(async (req, res) => {
     const channel = await requireChannelAccess(req.user!.id, req.body.channelId);
@@ -107,11 +119,30 @@ router.post(
     if (encrypted && (!req.body.iv || !req.body.keyVersion)) throw forbidden('Enveloppe de chiffrement incomplète');
     if (encrypted && req.body.attachments?.length) throw forbidden('Pièces jointes non prises en charge en chiffré');
 
+    // Partage d'un formulaire : il doit appartenir a un espace de l'utilisateur.
+    let sharedForm: { id: string; title: string } | null = null;
+    if (req.body.formId) {
+      if (encrypted) throw forbidden('Partage de formulaire indisponible en conversation chiffrée');
+      const form = await prisma.form.findUnique({
+        where: { id: req.body.formId },
+        select: { id: true, title: true, workspaceId: true },
+      });
+      if (!form) throw notFound('Formulaire introuvable');
+      const member = await prisma.workspaceMember.findFirst({
+        where: { workspaceId: form.workspaceId, userId: req.user!.id },
+        select: { id: true },
+      });
+      if (!member) throw forbidden('Formulaire non accessible');
+      sharedForm = { id: form.id, title: form.title };
+    }
+
     const message = await prisma.message.create({
       data: {
         channelId: req.body.channelId,
         authorId: req.user!.id,
-        body: req.body.body,
+        body: sharedForm ? req.body.body || sharedForm.title : req.body.body,
+        kind: sharedForm ? 'FORM' : 'TEXT',
+        formId: sharedForm?.id ?? null,
         parentId: req.body.parentId,
         forwardedFrom: req.body.forwardedFrom ?? null,
         encrypted,
@@ -179,11 +210,21 @@ router.post(
     );
 
     if (!message.parentId && !encrypted) {
-      runAutomations(channel.workspaceId, 'message.keyword', {
+      const cmdMatch = message.body.match(/^\/([a-z0-9_-]+)\s*(.*)$/is);
+      const autoCtx = {
         message: { body: message.body, id: message.id },
+        channelId: message.channelId,
+        channel: channel.name ?? '',
         author: message.author.fullName,
+        authorId: message.author.id,
+        text: message.body,
+        command: cmdMatch?.[1]?.toLowerCase() ?? '',
+        args: cmdMatch?.[2]?.trim() ?? '',
         summary: `Message de ${message.author.fullName} : ${message.body}`,
-      });
+      };
+      runAutomations(channel.workspaceId, 'message.keyword', autoCtx);
+      runAutomations(channel.workspaceId, 'message.created', autoCtx);
+      if (cmdMatch) runAutomations(channel.workspaceId, 'message.command', autoCtx);
     }
     res.status(201).json(message);
   }),

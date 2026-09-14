@@ -6,6 +6,7 @@ import { prisma } from '../../lib/prisma';
 import { badRequest, notFound } from '../../lib/http';
 import { runAutomations } from '../automations/dispatch';
 import { assertRequired, buildAnswerRows, previewAnswers } from '../forms/logic';
+import { createNotification } from '../../lib/notify';
 
 /**
  * Acces public (sans authentification) aux formulaires d'enquete PUBLIES.
@@ -119,6 +120,16 @@ router.post(
       form: { title: form.title, id: form.id },
       response: { id: response.id, by: 'Anonyme (lien public)' },
       summary: `Nouvelle réponse à « ${form.title} » via le lien public — ${previewAnswers(form, req.body.answers)}`,
+    });
+
+    await createNotification({
+      userId: form.createdById,
+      type: 'FORM_RESPONSE',
+      title: `Nouvelle reponse a « ${form.title} »`,
+      body: `Via le lien public (${req.body.email.toLowerCase()})`,
+      link: `/forms/${form.id}/responses`,
+      entityType: 'form',
+      entityId: form.id,
     });
 
     res.status(201).json({ ok: true });

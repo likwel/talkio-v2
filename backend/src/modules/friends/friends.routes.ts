@@ -5,6 +5,7 @@ import { validate } from '../../middleware/validate';
 import { prisma } from '../../lib/prisma';
 import { badRequest, notFound } from '../../lib/http';
 import { getIO } from '../../realtime/socket';
+import { createNotification } from '../../lib/notify';
 
 const router = Router();
 
@@ -53,15 +54,70 @@ router.get(
   }),
 );
 
-/** Envoyer une demande d'ami par email. */
-router.post(
-  '/request',
-  validate(z.object({ email: z.string().email() })),
+/**
+ * Recherche d'utilisateurs pour l'invitation (par nom OU par email exact),
+ * en excluant soi-meme, les amis et les demandes en cours.
+ */
+router.get(
+  '/search',
+  validate(z.object({ q: z.string().trim().min(1).max(80) }), 'query'),
   asyncHandler(async (req, res) => {
     const me = req.user!.id;
-    const target = await prisma.user.findUnique({ where: { email: req.body.email.toLowerCase() } });
-    if (!target) throw notFound('Aucun utilisateur avec cet email');
+    const q = String(req.query.q).trim();
+
+    const related = await prisma.friendship.findMany({
+      where: { OR: [{ requesterId: me }, { addresseeId: me }] },
+      select: { requesterId: true, addresseeId: true, status: true },
+    });
+    const excluded = new Set<string>([me]);
+    for (const r of related) {
+      excluded.add(r.requesterId === me ? r.addresseeId : r.requesterId);
+    }
+
+    const users = await prisma.user.findMany({
+      where: {
+        isActive: true,
+        id: { notIn: [...excluded] },
+        OR: [
+          { fullName: { contains: q, mode: 'insensitive' } },
+          { email: q.toLowerCase() },
+        ],
+      },
+      select: publicUser,
+      take: 8,
+      orderBy: { fullName: 'asc' },
+    });
+    res.json(users);
+  }),
+);
+
+/** Envoyer une demande d'ami : par email OU par utilisateur choisi (nom). */
+router.post(
+  '/request',
+  validate(
+    z
+      .object({ email: z.string().email().optional(), userId: z.string().optional() })
+      .refine((v) => !!v.email || !!v.userId, { message: 'email ou userId requis' }),
+  ),
+  asyncHandler(async (req, res) => {
+    const me = req.user!.id;
+    const target = req.body.userId
+      ? await prisma.user.findUnique({ where: { id: req.body.userId } })
+      : await prisma.user.findUnique({ where: { email: req.body.email!.toLowerCase() } });
+
+    if (!target) {
+      // Aucun compte : dans une vraie prod on enverrait un e-mail d'invitation.
+      if (req.body.email) {
+        // eslint-disable-next-line no-console
+        console.log(`[friend-invite] ${req.body.email} invite par ${me} (aucun compte existant)`);
+        return res.status(202).json({ invited: true, email: req.body.email });
+      }
+      throw notFound('Utilisateur introuvable');
+    }
     if (target.id === me) throw badRequest('Vous ne pouvez pas vous ajouter vous-meme');
+
+    const meUser = await prisma.user.findUnique({ where: { id: me }, select: { fullName: true } });
+    const meName = meUser?.fullName ?? 'Quelqu’un';
 
     const existing = await prisma.friendship.findFirst({
       where: {
@@ -82,6 +138,12 @@ router.post(
           data: { status: 'ACCEPTED' },
         });
         notify([me, target.id]);
+        await createNotification({
+          userId: target.id,
+          actorId: me,
+          type: 'FRIEND_ACCEPTED',
+          title: `${meName} et vous etes maintenant amis`,
+        });
         return res.json({ id: updated.id, status: updated.status });
       }
       throw badRequest('Demande deja envoyee');
@@ -91,6 +153,14 @@ router.post(
       data: { requesterId: me, addresseeId: target.id, status: 'PENDING' },
     });
     notify([me, target.id]);
+    await createNotification({
+      userId: target.id,
+      actorId: me,
+      type: 'FRIEND_REQUEST',
+      title: `${meName} vous a envoye une demande d'ami`,
+      entityType: 'friendship',
+      entityId: created.id,
+    });
     return res.status(201).json({ id: created.id, status: created.status });
   }),
 );
@@ -104,6 +174,13 @@ router.post(
     if (!f || f.addresseeId !== me || f.status !== 'PENDING') throw notFound('Demande introuvable');
     const updated = await prisma.friendship.update({ where: { id: f.id }, data: { status: 'ACCEPTED' } });
     notify([f.requesterId, f.addresseeId]);
+    const meUser = await prisma.user.findUnique({ where: { id: me }, select: { fullName: true } });
+    await createNotification({
+      userId: f.requesterId,
+      actorId: me,
+      type: 'FRIEND_ACCEPTED',
+      title: `${meUser?.fullName ?? 'Votre demande'} a accepte votre demande d'ami`,
+    });
     res.json({ id: updated.id, status: updated.status });
   }),
 );

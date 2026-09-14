@@ -14,9 +14,21 @@ const TRIGGERS = [
   'card.created',
   'meal.measurement.created',
   'message.keyword',
+  'message.command',
+  'message.created',
+  'member.joined',
   'channel.created',
 ] as const;
-const ACTIONS = ['message.post', 'card.create', 'webhook.post'] as const;
+const ACTIONS = [
+  'message.post',
+  'message.reply',
+  'message.broadcast',
+  'card.create',
+  'meal.activity.create',
+  'meal.activity.sync',
+  'webhook.post',
+  'http.request',
+] as const;
 
 const bodySchema = z.object({
   workspaceId: z.string(),

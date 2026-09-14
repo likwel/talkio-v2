@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import clsx from 'clsx';
 import { api } from '@/lib/api';
 import { useWorkspace } from '@/context/WorkspaceContext';
 import { useDialog } from '@/context/DialogContext';
-import type { FieldType, FormField, FormSection } from '@/lib/types';
+import type { FieldType, FormDef, FormField, FormSection } from '@/lib/types';
 import { RELEVANT_OPS, opNeedsValue, relevantOpLabel } from '@/lib/formLogic';
 import {
   IconAdd,
@@ -14,8 +14,10 @@ import {
   IconCopy,
   IconCheck,
   IconChevronDown,
+  IconPersonAdd,
 } from '@/lib/icons';
 import Select from '@/components/Select';
+import AssignFormModal from '@/components/AssignFormModal';
 
 type Status = 'DRAFT' | 'PUBLISHED' | 'CLOSED';
 const STATUS_LABEL: Record<Status, string> = { DRAFT: 'Brouillon', PUBLISHED: 'Publié', CLOSED: 'Fermé' };
@@ -105,6 +107,8 @@ const slug = (s: string, fallback: string) =>
 
 export default function FormBuilder() {
   const { formId } = useParams();
+  const [search] = useSearchParams();
+  const linkProjectId = search.get('projectId') || undefined;
   const { workspaces, personal } = useWorkspace();
   const navigate = useNavigate();
   const dialog = useDialog();
@@ -114,6 +118,8 @@ export default function FormBuilder() {
   const [description, setDescription] = useState('');
   const [wsId, setWsId] = useState('');
   const [status, setStatus] = useState<Status>('DRAFT');
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [canManage, setCanManage] = useState(true);
   const [version, setVersion] = useState(1);
   const [requireLogin, setRequireLogin] = useState(false);
   const [allowMultiple, setAllowMultiple] = useState(true);
@@ -137,6 +143,8 @@ export default function FormBuilder() {
       setTitle(r.data.title);
       setDescription(r.data.description ?? '');
       setStatus(r.data.status);
+      setWsId(r.data.workspace?.id ?? r.data.workspaceId ?? '');
+      setCanManage(r.data.canManage !== false);
       setVersion(r.data.version ?? 1);
       setPublicCode(r.data.publicCode ?? null);
       setRequireLogin(!!r.data.requireLogin);
@@ -267,16 +275,38 @@ export default function FormBuilder() {
       } else {
         const created = await api.post('/forms', {
           workspaceId: wsId || personal?.id || workspaces[0]?.id,
+          projectId: linkProjectId,
           ...payload,
         });
         if (nextStatus && nextStatus !== 'DRAFT') {
           await api.put(`/forms/${created.data.id}`, { status: nextStatus });
         }
       }
-      navigate('/meal?tab=forms');
+      navigate(linkProjectId ? `/meal/projects/${linkProjectId}?t=collecte` : '/meal?tab=forms');
     } finally {
       setSaving(false);
     }
+  }
+
+  async function removeForm() {
+    if (!formId) return;
+    const ok = await dialog.confirm({
+      title: 'Supprimer le formulaire',
+      message: `« ${title || 'Ce formulaire'} » et toutes ses reponses seront definitivement supprimes.`,
+      confirmLabel: 'Supprimer',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await api.delete(`/forms/${formId}`);
+    } catch (err: any) {
+      await dialog.alert({
+        title: 'Suppression impossible',
+        message: err?.response?.data?.error ?? 'Action refusee.',
+      });
+      return;
+    }
+    navigate(linkProjectId ? `/meal/projects/${linkProjectId}?t=collecte` : '/meal?tab=forms');
   }
 
   async function exportDefinition() {
@@ -763,11 +793,30 @@ export default function FormBuilder() {
             <IconCopy className="h-4 w-4" /> Exporter (.json)
           </button>
         )}
+        {editing && (
+          <button className="btn-text" onClick={() => setAssignOpen(true)} disabled={saving}>
+            <IconPersonAdd className="h-4 w-4" /> Assigner
+          </button>
+        )}
+        {editing && canManage && (
+          <button className="btn-text text-red-500" onClick={removeForm} disabled={saving}>
+            <IconDelete className="h-4 w-4" /> Supprimer
+          </button>
+        )}
 
         <button className="btn-text ml-auto" onClick={() => navigate('/meal?tab=forms')}>
           Annuler
         </button>
       </div>
+
+      <AssignFormModal
+        form={
+          assignOpen && formId
+            ? ({ id: formId, title, status, fields: [], workspace: { id: wsId, name: '' } } as FormDef)
+            : null
+        }
+        onClose={() => setAssignOpen(false)}
+      />
     </div>
   );
 }

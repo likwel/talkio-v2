@@ -9,6 +9,7 @@ import ViewToggle, { useViewMode } from '@/components/ViewToggle';
 import EmptyState from '@/components/EmptyState';
 import Pagination, { usePagination } from '@/components/Pagination';
 import WorkspaceTag, { WorkspacePicker } from '@/components/WorkspaceTag';
+import { PROJECT_HEALTH, PROJECT_STATUS } from '@/components/meal/mealUi';
 
 const AV = ['#0cae36', '#2563eb', '#d946ef', '#f59e0b', '#ef4444', '#14b8a6', '#8b5cf6', '#ec4899'];
 const tint = (id: string) => {
@@ -20,7 +21,7 @@ const tint = (id: string) => {
 export default function ProjectsPanel() {
   const { workspaces, personal } = useWorkspace();
   const qc = useQueryClient();
-  const [form, setForm] = useState({ name: '', code: '', donor: '' });
+  const [form, setForm] = useState({ name: '', code: '', donor: '', sector: '', startDate: '', endDate: '' });
   const [wsId, setWsId] = useState('');
   const [view, setView] = useViewMode('meal');
   const [addOpen, setAddOpen] = useState(false);
@@ -32,9 +33,20 @@ export default function ProjectsPanel() {
   });
 
   const create = useMutation({
-    mutationFn: async () => (await api.post('/meal/projects', { workspaceId: targetWs, ...form })).data,
+    mutationFn: async () =>
+      (
+        await api.post('/meal/projects', {
+          workspaceId: targetWs,
+          name: form.name,
+          code: form.code || undefined,
+          donor: form.donor || undefined,
+          sector: form.sector || undefined,
+          startDate: form.startDate || undefined,
+          endDate: form.endDate || undefined,
+        })
+      ).data,
     onSuccess: () => {
-      setForm({ name: '', code: '', donor: '' });
+      setForm({ name: '', code: '', donor: '', sector: '', startDate: '', endDate: '' });
       setAddOpen(false);
       qc.invalidateQueries({ queryKey: ['projects', 'all'] });
     },
@@ -102,6 +114,33 @@ export default function ProjectsPanel() {
               onChange={(e) => setForm({ ...form, donor: e.target.value })}
             />
           </label>
+          <label>
+            <span className="field-label">Secteur</span>
+            <input
+              className="input"
+              placeholder="WASH, santé, education…"
+              value={form.sector}
+              onChange={(e) => setForm({ ...form, sector: e.target.value })}
+            />
+          </label>
+          <label>
+            <span className="field-label">Debut</span>
+            <input
+              className="input"
+              type="date"
+              value={form.startDate}
+              onChange={(e) => setForm({ ...form, startDate: e.target.value })}
+            />
+          </label>
+          <label>
+            <span className="field-label">Fin</span>
+            <input
+              className="input"
+              type="date"
+              value={form.endDate}
+              onChange={(e) => setForm({ ...form, endDate: e.target.value })}
+            />
+          </label>
           <WorkspacePicker
             value={targetWs ?? ''}
             onChange={setWsId}
@@ -130,7 +169,7 @@ export default function ProjectsPanel() {
             <Link
               key={p.id}
               to={`/meal/projects/${p.id}`}
-              className="card group flex flex-col gap-2.5 transition hover:bg-[var(--surface-2)]"
+              className="card group flex flex-col gap-2.5 transition hover:-translate-y-0.5 hover:border-[var(--accent-soft)] hover:shadow-elevation-2"
             >
               <div className="flex items-center gap-2.5">
                 <span
@@ -148,9 +187,30 @@ export default function ProjectsPanel() {
                 </span>
                 <WorkspaceTag ws={p.workspace} />
               </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span
+                  className={
+                    'inline-flex rounded-full px-2 py-0.5 text-2xs font-semibold ' +
+                    PROJECT_STATUS[p.status ?? 'ACTIVE'].cls
+                  }
+                >
+                  {PROJECT_STATUS[p.status ?? 'ACTIVE'].label}
+                </span>
+                <span
+                  className={
+                    'inline-flex items-center gap-1 text-2xs font-semibold ' +
+                    PROJECT_HEALTH[p.health ?? 'ON_TRACK'].cls
+                  }
+                >
+                  <span className={'h-2 w-2 rounded-full ' + PROJECT_HEALTH[p.health ?? 'ON_TRACK'].dot} />
+                  {PROJECT_HEALTH[p.health ?? 'ON_TRACK'].label}
+                </span>
+                {p.avgIndicator != null && <Chip dim>{p.avgIndicator}% indic.</Chip>}
+              </div>
               <div className="mt-auto flex items-center justify-between border-t border-[var(--outline)] pt-2 text-2xs text-[var(--text-dim)]">
                 <span className="flex gap-1.5">
                   <Chip dim>{p._count?.indicators ?? 0} indic.</Chip>
+                  <Chip dim>{p._count?.activities ?? 0} activ.</Chip>
                   <Chip dim>{p._count?.forms ?? 0} form.</Chip>
                 </span>
                 <IconNext className="h-4 w-4 transition group-hover:translate-x-0.5" />
@@ -173,12 +233,24 @@ export default function ProjectsPanel() {
                 {(p.code || p.name).slice(0, 2).toUpperCase()}
               </span>
               <span className="min-w-0 flex-1 truncate font-medium item-title">{p.name}</span>
+              <span
+                className={
+                  'hidden shrink-0 rounded-full px-2 py-0.5 text-2xs font-semibold sm:inline-flex ' +
+                  PROJECT_STATUS[p.status ?? 'ACTIVE'].cls
+                }
+              >
+                {PROJECT_STATUS[p.status ?? 'ACTIVE'].label}
+              </span>
+              <span
+                className={'h-2 w-2 shrink-0 rounded-full ' + PROJECT_HEALTH[p.health ?? 'ON_TRACK'].dot}
+                title={PROJECT_HEALTH[p.health ?? 'ON_TRACK'].label}
+              />
               <WorkspaceTag ws={p.workspace} className="hidden sm:inline-flex" />
               <span className="hidden shrink-0 text-2xs text-[var(--text-dim)] md:inline">
                 {p.code} {p.donor && `· ${p.donor}`}
               </span>
               <span className="shrink-0 text-2xs text-[var(--text-dim)]">
-                {p._count?.indicators ?? 0} ind. · {p._count?.forms ?? 0} form.
+                {p._count?.indicators ?? 0} ind. · {p._count?.activities ?? 0} act.
               </span>
               <IconNext className="h-4 w-4 shrink-0 text-[var(--text-dim)] transition group-hover:translate-x-0.5" />
             </Link>

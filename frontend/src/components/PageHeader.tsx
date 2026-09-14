@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react';
 import clsx from 'clsx';
-import AccountMenu from '@/components/AccountMenu';
 
 interface Props {
   /** Icône déjà dimensionnée, ex. <IconKanban className="h-6 w-6 shrink-0 text-[var(--accent)]" />. */
@@ -28,7 +27,6 @@ export default function PageHeader({ icon, title, children, className }: Props) 
         {title}
       </h1>
       {children && <div className="flex shrink-0 items-center gap-1.5">{children}</div>}
-      <AccountMenu align="right" />
     </div>
   );
 }

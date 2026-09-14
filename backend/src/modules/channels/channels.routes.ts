@@ -310,11 +310,28 @@ router.post(
   asyncHandler(async (req, res) => {
     const channel = await requireChannelAccess(req.user!.id, req.params.id);
     await Promise.all(req.body.userIds.map((uid: string) => requireWorkspaceMember(uid, channel.workspaceId)));
-    await prisma.channelMember.createMany({
+    const added = await prisma.channelMember.createMany({
       data: req.body.userIds.map((userId: string) => ({ channelId: channel.id, userId })),
       skipDuplicates: true,
     });
     const full = await prisma.channel.findUnique({ where: { id: channel.id }, include: memberInclude });
+
+    if (added.count > 0) {
+      const users = await prisma.user.findMany({
+        where: { id: { in: req.body.userIds } },
+        select: { id: true, fullName: true },
+      });
+      for (const u of users) {
+        runAutomations(channel.workspaceId, 'member.joined', {
+          channelId: channel.id,
+          channel: channel.name ?? '',
+          user: u.fullName,
+          userId: u.id,
+          actorId: req.user!.id,
+          summary: `${u.fullName} a rejoint ${channel.name ?? 'le salon'}`,
+        });
+      }
+    }
     res.status(201).json(full);
   }),
 );

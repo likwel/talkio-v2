@@ -95,9 +95,20 @@ export interface Automation {
     | 'card.created'
     | 'meal.measurement.created'
     | 'message.keyword'
+    | 'message.command'
+    | 'message.created'
+    | 'member.joined'
     | 'channel.created';
   triggerConfig: Record<string, string>;
-  actionType: 'message.post' | 'card.create' | 'webhook.post';
+  actionType:
+    | 'message.post'
+    | 'message.reply'
+    | 'message.broadcast'
+    | 'card.create'
+    | 'meal.activity.create'
+    | 'meal.activity.sync'
+    | 'webhook.post'
+    | 'http.request';
   actionConfig: Record<string, string>;
   lastRunAt?: string | null;
   runCount: number;
@@ -116,7 +127,7 @@ export interface Message {
   editedAt?: string | null;
   author: Pick<User, 'id' | 'fullName' | 'avatarUrl' | 'presenceStatus'>;
   attachments?: Attachment[];
-  kind?: 'TEXT' | 'CALL';
+  kind?: 'TEXT' | 'CALL' | 'FORM';
   /** Details de l'appel pour un message `kind: 'CALL'`. */
   call?: {
     roomId: string;
@@ -124,6 +135,15 @@ export interface Message {
     status: 'RINGING' | 'ONGOING' | 'ENDED' | 'MISSED';
     startedAt: string;
     endedAt?: string | null;
+  } | null;
+  /** Formulaire partage pour un message `kind: 'FORM'`. */
+  form?: {
+    id: string;
+    title: string;
+    description?: string | null;
+    status: 'DRAFT' | 'PUBLISHED' | 'CLOSED';
+    publicCode?: string | null;
+    _count?: { fields: number; responses: number };
   } | null;
   parentId?: string | null;
   /** Message cite (fonction « Repondre »). */
@@ -180,17 +200,35 @@ export interface Board {
   _count?: { columns: number; members: number };
 }
 
+export type LogframeLevel = 'IMPACT' | 'OUTCOME' | 'OUTPUT' | 'ACTIVITY';
+export type ProjectStatus = 'ACTIVE' | 'ON_HOLD' | 'COMPLETED' | 'ARCHIVED';
+export type ProjectHealth = 'ON_TRACK' | 'AT_RISK' | 'OFF_TRACK';
+export type ActivityStatus = 'PLANNED' | 'IN_PROGRESS' | 'DONE' | 'DELAYED' | 'CANCELLED';
+export type RiskStatus = 'OPEN' | 'MITIGATED' | 'CLOSED';
+export type FeedbackType = 'COMPLAINT' | 'SUGGESTION' | 'QUESTION' | 'APPRECIATION';
+export type FeedbackStatus = 'NEW' | 'IN_REVIEW' | 'RESOLVED' | 'CLOSED';
+
+export interface IndicatorTarget {
+  id: string;
+  period: string;
+  target: number;
+}
+
 export interface Indicator {
   id: string;
   code: string;
   name: string;
-  level: 'IMPACT' | 'OUTCOME' | 'OUTPUT' | 'ACTIVITY';
+  level: LogframeLevel;
   unit?: string | null;
   baseline?: number | null;
   target?: number | null;
+  meansOfVerification?: string | null;
+  assumptions?: string | null;
   achieved?: number;
   progress?: number | null;
+  disagg?: { female: number; male: number; youth: number; disability: number };
   measurements?: Measurement[];
+  targets?: IndicatorTarget[];
 }
 
 export interface Measurement {
@@ -200,19 +238,126 @@ export interface Measurement {
   periodEnd: string;
   location?: string | null;
   note?: string | null;
+  source?: string | null;
+  female?: number | null;
+  male?: number | null;
+  youth?: number | null;
+  disability?: number | null;
+  verified?: boolean;
+}
+
+export interface Activity {
+  id: string;
+  title: string;
+  description?: string | null;
+  indicatorId?: string | null;
+  status: ActivityStatus;
+  progress: number;
+  startDate?: string | null;
+  dueDate?: string | null;
+  location?: string | null;
+  assigneeId?: string | null;
+  assignee?: Pick<User, 'id' | 'fullName' | 'avatarUrl'> | null;
+  /** Evenement d'agenda aligne sur l'echeance (phase Planification). */
+  calendarEventId?: string | null;
+  /** Tache Kanban liee : son statut synchronise celui de l'activite. */
+  cardId?: string | null;
+  card?: { id: string; title: string; column: { name: string; boardId: string; board: { name: string } } } | null;
+}
+
+export interface BudgetLine {
+  id: string;
+  label: string;
+  donor?: string | null;
+  category?: string | null;
+  planned: number;
+  spent: number;
+  note?: string | null;
+}
+
+export interface Risk {
+  id: string;
+  title: string;
+  description?: string | null;
+  likelihood: number;
+  impact: number;
+  mitigation?: string | null;
+  status: RiskStatus;
+  ownerId?: string | null;
+  owner?: { id: string; fullName: string } | null;
+}
+
+export interface FeedbackEntry {
+  id: string;
+  type: FeedbackType;
+  channel?: string | null;
+  category?: string | null;
+  sensitive: boolean;
+  summary: string;
+  detail?: string | null;
+  reporter?: string | null;
+  location?: string | null;
+  status: FeedbackStatus;
+  resolution?: string | null;
+  receivedAt: string;
+  resolvedAt?: string | null;
+}
+
+export interface Lesson {
+  id: string;
+  title: string;
+  category?: string | null;
+  context?: string | null;
+  insight: string;
+  recommendation?: string | null;
+  createdAt: string;
+}
+
+export interface PeriodReport {
+  id: string;
+  period: string;
+  title: string;
+  narrative?: string | null;
+  achievements?: string | null;
+  challenges?: string | null;
+  createdAt: string;
 }
 
 export interface Project {
   id: string;
+  workspaceId?: string;
   workspace?: WorkspaceRef;
   name: string;
   code?: string | null;
   donor?: string | null;
   description?: string | null;
+  goal?: string | null;
+  sector?: string | null;
+  location?: string | null;
+  currency?: string;
+  status?: ProjectStatus;
+  health?: ProjectHealth;
   startDate?: string | null;
   endDate?: string | null;
   indicators?: Indicator[];
-  _count?: { indicators: number; forms: number };
+  activities?: Activity[];
+  budgetLines?: BudgetLine[];
+  risks?: Risk[];
+  feedback?: FeedbackEntry[];
+  lessons?: Lesson[];
+  reports?: PeriodReport[];
+  budgetTotals?: { planned: number; spent: number; rate: number | null };
+  /** Agregats de la liste des projets. */
+  budget?: { planned: number; spent: number; rate: number | null };
+  activitiesDone?: number;
+  avgIndicator?: number | null;
+  _count?: {
+    indicators?: number;
+    forms?: number;
+    activities?: number;
+    risks?: number;
+    feedback?: number;
+  };
 }
 
 export type FieldType =
@@ -297,9 +442,34 @@ export interface FormSection {
   relevantValue?: string | null;
 }
 
+export interface FormAssignee {
+  id: string;
+  userId: string;
+  status?: 'PENDING' | 'ACCEPTED' | 'DECLINED';
+  note?: string | null;
+  dueAt?: string | null;
+  respondedAt?: string | null;
+  user: Pick<User, 'id' | 'fullName' | 'avatarUrl'> & { email?: string };
+}
+
 export interface FormDef {
   id: string;
+  createdById?: string;
+  /** L'utilisateur peut-il supprimer / administrer ce formulaire ? */
+  canManage?: boolean;
   workspace?: WorkspaceRef;
+  projectId?: string | null;
+  project?: { id: string; name: string } | null;
+  assignees?: FormAssignee[];
+  /** Present dans la liste « formulaires attribues a moi ». */
+  assignment?: {
+    id: string;
+    note?: string | null;
+    dueAt?: string | null;
+    respondedAt?: string | null;
+    assignedBy?: { id: string; fullName: string } | null;
+    createdAt: string;
+  };
   title: string;
   description?: string | null;
   status: 'DRAFT' | 'PUBLISHED' | 'CLOSED';
@@ -378,6 +548,30 @@ export interface FriendRequest {
   id: string;
   user: User;
   createdAt: string;
+}
+
+export type NotificationType =
+  | 'FRIEND_REQUEST'
+  | 'FRIEND_ACCEPTED'
+  | 'PROJECT_ASSIGNED'
+  | 'RISK_ASSIGNED'
+  | 'MEASUREMENT_ADDED'
+  | 'FORM_RESPONSE'
+  | 'FORM_ASSIGNED'
+  | 'ACTIVITY_OVERDUE'
+  | 'GENERIC';
+
+export interface AppNotification {
+  id: string;
+  type: NotificationType;
+  title: string;
+  body?: string | null;
+  link?: string | null;
+  entityType?: string | null;
+  entityId?: string | null;
+  readAt?: string | null;
+  createdAt: string;
+  actor?: Pick<User, 'id' | 'fullName' | 'avatarUrl'> | null;
 }
 
 export interface ActiveCall {

@@ -5,7 +5,9 @@ import { asyncHandler } from '../../lib/asyncHandler';
 import { validate } from '../../middleware/validate';
 import { prisma } from '../../lib/prisma';
 import { myWorkspaceIds, requireWorkspaceMember } from '../../lib/access';
-import { badRequest, notFound } from '../../lib/http';
+import { badRequest, forbidden, notFound } from '../../lib/http';
+import { createNotification } from '../../lib/notify';
+import { getIO } from '../../realtime/socket';
 import { runAutomations } from '../automations/dispatch';
 import { assertRequired, buildAnswerRows, previewAnswers } from './logic';
 
@@ -101,12 +103,44 @@ type FieldInput = z.infer<typeof fieldSchema>;
 const formInclude = {
   sections: { orderBy: { position: 'asc' } as const },
   fields: { orderBy: { position: 'asc' } as const },
+  workspace: { select: { id: true, name: true, color: true, isPersonal: true } },
 };
 
 async function formOr404(id: string) {
   const form = await prisma.form.findUnique({ where: { id }, include: formInclude });
   if (!form) throw notFound('Formulaire introuvable');
   return form;
+}
+
+/**
+ * « Admin du formulaire » : son createur, ou un OWNER/ADMIN de l'espace.
+ * Seul un admin peut supprimer le formulaire pour tout le monde.
+ */
+async function isFormManager(
+  userId: string,
+  form: { createdById: string; workspaceId: string },
+): Promise<boolean> {
+  if (form.createdById === userId) return true;
+  const member = await prisma.workspaceMember.findUnique({
+    where: { workspaceId_userId: { workspaceId: form.workspaceId, userId } },
+    select: { role: true },
+  });
+  return member?.role === 'OWNER' || member?.role === 'ADMIN';
+}
+
+/** Ensemble des ids « attribuables » : membres de l'espace + amis de l'utilisateur. */
+async function assignableUserIds(userId: string, workspaceId: string): Promise<Set<string>> {
+  const [members, friendships] = await Promise.all([
+    prisma.workspaceMember.findMany({ where: { workspaceId }, select: { userId: true } }),
+    prisma.friendship.findMany({
+      where: { status: 'ACCEPTED', OR: [{ requesterId: userId }, { addresseeId: userId }] },
+      select: { requesterId: true, addresseeId: true },
+    }),
+  ]);
+  const ids = new Set(members.map((m) => m.userId));
+  for (const f of friendships) ids.add(f.requesterId === userId ? f.addresseeId : f.requesterId);
+  ids.delete(userId);
+  return ids;
 }
 
 /**
@@ -211,11 +245,61 @@ router.get(
       where: { ...scope, projectId: req.query.projectId ? String(req.query.projectId) : undefined },
       include: {
         workspace: { select: { id: true, name: true, color: true, isPersonal: true } },
+        project: { select: { id: true, name: true } },
         _count: { select: { responses: true, fields: true, sections: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
-    res.json(forms);
+
+    // Roles de l'utilisateur dans les espaces concernes -> `canManage` par formulaire.
+    const wsIds = [...new Set(forms.map((f) => f.workspaceId))];
+    const roles = await prisma.workspaceMember.findMany({
+      where: { userId: req.user!.id, workspaceId: { in: wsIds } },
+      select: { workspaceId: true, role: true },
+    });
+    const adminOf = new Set(
+      roles.filter((r) => r.role === 'OWNER' || r.role === 'ADMIN').map((r) => r.workspaceId),
+    );
+    res.json(
+      forms.map((f) => ({
+        ...f,
+        canManage: f.createdById === req.user!.id || adminOf.has(f.workspaceId),
+      })),
+    );
+  }),
+);
+
+/** Formulaires attribues a l'utilisateur courant (a remplir). Avant `/:id`. */
+router.get(
+  '/assigned',
+  asyncHandler(async (req, res) => {
+    const rows = await prisma.formAssignee.findMany({
+      where: { userId: req.user!.id, status: 'ACCEPTED' },
+      orderBy: [{ respondedAt: 'asc' }, { createdAt: 'desc' }],
+      include: {
+        assignedBy: { select: { id: true, fullName: true } },
+        form: {
+          include: {
+            workspace: { select: { id: true, name: true, color: true, isPersonal: true } },
+            project: { select: { id: true, name: true } },
+            _count: { select: { responses: true, fields: true, sections: true } },
+          },
+        },
+      },
+    });
+    res.json(
+      rows.map((r) => ({
+        ...r.form,
+        assignment: {
+          id: r.id,
+          note: r.note,
+          dueAt: r.dueAt,
+          respondedAt: r.respondedAt,
+          assignedBy: r.assignedBy,
+          createdAt: r.createdAt,
+        },
+      })),
+    );
   }),
 );
 
@@ -259,7 +343,247 @@ router.get(
   asyncHandler(async (req, res) => {
     const form = await formOr404(req.params.id);
     await requireWorkspaceMember(req.user!.id, form.workspaceId);
-    res.json(form);
+    const assignees = await prisma.formAssignee.findMany({
+      where: { formId: form.id },
+      include: { user: { select: { id: true, fullName: true, email: true, avatarUrl: true } } },
+      orderBy: { createdAt: 'asc' },
+    });
+    res.json({ ...form, assignees, canManage: await isFormManager(req.user!.id, form) });
+  }),
+);
+
+/** Personnes attribuables a ce formulaire (membres de l'espace + amis). */
+router.get(
+  '/:id/assignable',
+  asyncHandler(async (req, res) => {
+    const form = await formOr404(req.params.id);
+    await requireWorkspaceMember(req.user!.id, form.workspaceId);
+    const ids = await assignableUserIds(req.user!.id, form.workspaceId);
+    const users = await prisma.user.findMany({
+      where: { id: { in: [...ids] }, isActive: true },
+      select: { id: true, fullName: true, email: true, avatarUrl: true },
+      orderBy: { fullName: 'asc' },
+    });
+    res.json(users);
+  }),
+);
+
+/**
+ * Depose la carte de formulaire dans la conversation directe entre l'assignateur
+ * et l'assigne (meilleur effort : silencieux si la DM ne peut pas etre creee).
+ */
+async function deliverFormDM(
+  form: { id: string; title: string; workspaceId: string },
+  fromId: string,
+  toId: string,
+) {
+  try {
+    const [a, b] = await Promise.all([
+      prisma.workspaceMember.findFirst({ where: { workspaceId: form.workspaceId, userId: fromId } }),
+      prisma.workspaceMember.findFirst({ where: { workspaceId: form.workspaceId, userId: toId } }),
+    ]);
+    if (!a || !b) return;
+
+    let channel = await prisma.channel.findFirst({
+      where: {
+        workspaceId: form.workspaceId,
+        type: 'DIRECT',
+        name: null,
+        AND: [{ members: { some: { userId: fromId } } }, { members: { some: { userId: toId } } }],
+      },
+      select: { id: true },
+    });
+    if (!channel) {
+      channel = await prisma.channel.create({
+        data: {
+          workspaceId: form.workspaceId,
+          type: 'DIRECT',
+          createdById: fromId,
+          members: { create: [{ userId: fromId }, { userId: toId }] },
+        },
+        select: { id: true },
+      });
+    }
+
+    const message = await prisma.message.create({
+      data: { channelId: channel.id, authorId: fromId, body: form.title, kind: 'FORM', formId: form.id },
+      include: {
+        author: { select: { id: true, fullName: true, avatarUrl: true, presenceStatus: true } },
+        attachments: true,
+        form: {
+          select: {
+            id: true,
+            title: true,
+            description: true,
+            status: true,
+            publicCode: true,
+            _count: { select: { fields: true, responses: true } },
+          },
+        },
+      },
+    });
+    const io = getIO();
+    io?.to(`channel:${channel.id}`).emit('message:new', message);
+    io?.to(`user:${toId}`).emit('message:notify', {
+      channelId: channel.id,
+      workspaceId: form.workspaceId,
+      isDirect: true,
+      from: { id: fromId, fullName: message.author.fullName },
+      preview: `📋 ${form.title}`,
+      createdAt: message.createdAt,
+    });
+  } catch {
+    /* pas de DM possible : la notification et la liste « assignes a moi » suffisent */
+  }
+}
+
+/** Attribuer le formulaire a un ou plusieurs utilisateurs. */
+router.post(
+  '/:id/assignees',
+  validate(
+    z.object({
+      userIds: z.array(z.string()).min(1).max(50),
+      note: z.string().max(2000).optional(),
+      dueAt: z.coerce.date().optional(),
+    }),
+  ),
+  asyncHandler(async (req, res) => {
+    const form = await formOr404(req.params.id);
+    await requireWorkspaceMember(req.user!.id, form.workspaceId);
+    const me = req.user!.id;
+    const meUser = await prisma.user.findUnique({ where: { id: me }, select: { fullName: true } });
+    const meName = meUser?.fullName ?? 'Quelqu’un';
+
+    // Liaison espace : on ne peut attribuer qu'a un membre de l'espace ou un ami.
+    const allowed = await assignableUserIds(me, form.workspaceId);
+    const targets = (await prisma.user.findMany({
+      where: { id: { in: req.body.userIds.filter((id: string) => allowed.has(id)) }, isActive: true },
+      select: { id: true },
+    })).map((u) => u.id);
+    if (targets.length === 0) throw badRequest('Aucune personne attribuable (membre de l’espace ou ami).');
+
+    for (const userId of targets) {
+      const existing = await prisma.formAssignee.findUnique({
+        where: { formId_userId: { formId: form.id, userId } },
+        select: { id: true, status: true },
+      });
+      const row = await prisma.formAssignee.upsert({
+        where: { formId_userId: { formId: form.id, userId } },
+        update: { note: req.body.note ?? null, dueAt: req.body.dueAt ?? null, assignedById: me },
+        create: {
+          formId: form.id,
+          userId,
+          assignedById: me,
+          status: 'PENDING',
+          note: req.body.note ?? null,
+          dueAt: req.body.dueAt ?? null,
+        },
+      });
+      // On (re)notifie tant que l'invite n'a pas encore accepte.
+      if (existing?.status === 'ACCEPTED' || userId === me) continue;
+
+      await createNotification({
+        userId,
+        actorId: me,
+        type: 'FORM_ASSIGNED',
+        title: `${meName} vous invite a remplir un formulaire`,
+        body: form.title,
+        // Pas de lien direct : l'invite doit accepter depuis la notification.
+        entityType: 'formAssignee',
+        entityId: row.id,
+      });
+    }
+
+    const assignees = await prisma.formAssignee.findMany({
+      where: { formId: form.id },
+      include: { user: { select: { id: true, fullName: true, email: true, avatarUrl: true } } },
+      orderBy: { createdAt: 'asc' },
+    });
+    res.status(201).json(assignees);
+  }),
+);
+
+/** L'invite accepte : il rejoint l'espace (invite si besoin) et recoit le formulaire. */
+router.post(
+  '/assignments/:assigneeId/accept',
+  asyncHandler(async (req, res) => {
+    const me = req.user!.id;
+    const row = await prisma.formAssignee.findUnique({
+      where: { id: req.params.assigneeId },
+      include: { form: { select: { id: true, title: true, workspaceId: true } } },
+    });
+    if (!row || row.userId !== me) throw notFound('Invitation introuvable');
+
+    if (row.status !== 'ACCEPTED') {
+      await prisma.formAssignee.update({
+        where: { id: row.id },
+        data: { status: 'ACCEPTED' },
+      });
+      // Liaison espace : l'invite devient membre (GUEST) s'il ne l'est pas.
+      await prisma.workspaceMember.upsert({
+        where: { workspaceId_userId: { workspaceId: row.form.workspaceId, userId: me } },
+        update: {},
+        create: { workspaceId: row.form.workspaceId, userId: me, role: 'GUEST' },
+      });
+      await deliverFormDM(row.form, row.assignedById ?? me, me);
+      if (row.assignedById && row.assignedById !== me) {
+        const meU = await prisma.user.findUnique({ where: { id: me }, select: { fullName: true } });
+        await createNotification({
+          userId: row.assignedById,
+          actorId: me,
+          type: 'FORM_ASSIGNED',
+          title: `${meU?.fullName ?? 'Un membre'} a accepte le formulaire`,
+          body: row.form.title,
+          link: `/forms/${row.form.id}`,
+          entityType: 'form',
+          entityId: row.form.id,
+        });
+      }
+    }
+    res.json({ ok: true, formId: row.form.id });
+  }),
+);
+
+/** L'invite refuse : l'attribution est retiree. */
+router.post(
+  '/assignments/:assigneeId/decline',
+  asyncHandler(async (req, res) => {
+    const me = req.user!.id;
+    const row = await prisma.formAssignee.findUnique({
+      where: { id: req.params.assigneeId },
+      include: { form: { select: { id: true, title: true } } },
+    });
+    if (!row || row.userId !== me) throw notFound('Invitation introuvable');
+    await prisma.formAssignee.delete({ where: { id: row.id } });
+    if (row.assignedById && row.assignedById !== me) {
+      const meU = await prisma.user.findUnique({ where: { id: me }, select: { fullName: true } });
+      await createNotification({
+        userId: row.assignedById,
+        actorId: me,
+        type: 'FORM_ASSIGNED',
+        title: `${meU?.fullName ?? 'Un membre'} a refuse le formulaire`,
+        body: row.form.title,
+        entityType: 'form',
+        entityId: row.form.id,
+      });
+    }
+    res.status(204).end();
+  }),
+);
+
+router.delete(
+  '/:id/assignees/:userId',
+  asyncHandler(async (req, res) => {
+    const form = await formOr404(req.params.id);
+    await requireWorkspaceMember(req.user!.id, form.workspaceId);
+    // Un non-admin ne peut retirer que sa propre attribution.
+    if (req.params.userId !== req.user!.id && !(await isFormManager(req.user!.id, form))) {
+      throw forbidden('Action reservee a l’administrateur du formulaire');
+    }
+    await prisma.formAssignee.deleteMany({
+      where: { formId: form.id, userId: req.params.userId },
+    });
+    res.status(204).end();
   }),
 );
 
@@ -272,6 +596,7 @@ router.put(
       status: z.enum(['DRAFT', 'PUBLISHED', 'CLOSED']).optional(),
       requireLogin: z.boolean().optional(),
       allowMultiple: z.boolean().optional(),
+      projectId: z.string().nullable().optional(),
       sections: z.array(sectionSchema).optional(),
       fields: z.array(fieldSchema).optional(),
     }),
@@ -279,6 +604,13 @@ router.put(
   asyncHandler(async (req, res) => {
     const form = await formOr404(req.params.id);
     await requireWorkspaceMember(req.user!.id, form.workspaceId);
+
+    // Rattachement a un projet MEAL : le projet doit etre dans le meme espace.
+    if (typeof req.body.projectId === 'string' && req.body.projectId) {
+      const project = await prisma.project.findUnique({ where: { id: req.body.projectId } });
+      if (!project || project.workspaceId !== form.workspaceId)
+        throw notFound('Projet introuvable dans cet espace');
+    }
 
     const { fields, sections, ...rest } = req.body as {
       fields?: FieldInput[];
@@ -304,6 +636,26 @@ router.put(
       return tx.form.findUnique({ where: { id: form.id }, include: formInclude });
     });
     res.json(updated);
+  }),
+);
+
+/**
+ * Supprime le formulaire pour tout le monde (cascade sections / champs / reponses).
+ * Reserve a l'admin du formulaire : son createur, ou un OWNER/ADMIN de l'espace.
+ * Les autres utilisent `DELETE /:id/assignees/<leur id>` (retrait de leur compte).
+ */
+router.delete(
+  '/:id',
+  asyncHandler(async (req, res) => {
+    const form = await formOr404(req.params.id);
+    await requireWorkspaceMember(req.user!.id, form.workspaceId);
+    if (!(await isFormManager(req.user!.id, form))) {
+      throw forbidden(
+        "Seul l'administrateur du formulaire peut le supprimer. Vous pouvez le retirer de votre compte.",
+      );
+    }
+    await prisma.form.delete({ where: { id: form.id } });
+    res.status(204).end();
   }),
 );
 
@@ -406,6 +758,7 @@ router.post(
   validate(
     z.object({
       answers: z.record(z.any()),
+      email: z.string().trim().email().optional(),
       latitude: z.number().optional(),
       longitude: z.number().optional(),
       deviceId: z.string().max(80).optional(),
@@ -419,10 +772,17 @@ router.post(
     assertRequired(form, req.body.answers);
     const rows = buildAnswerRows(form, req.body.answers);
 
+    // L'e-mail du compte connecte est enregistre avec la reponse (tracabilite).
+    const account = await prisma.user.findUnique({
+      where: { id: req.user!.id },
+      select: { fullName: true, email: true },
+    });
+
     const response = await prisma.formResponse.create({
       data: {
         formId: form.id,
         submittedById: req.user!.id,
+        email: (req.body.email ?? account?.email)?.toLowerCase(),
         formVersion: form.version,
         deviceId: req.body.deviceId,
         latitude: req.body.latitude,
@@ -432,11 +792,27 @@ router.post(
       include: { answers: true },
     });
 
-    const submitter = await prisma.user.findUnique({ where: { id: req.user!.id }, select: { fullName: true } });
     runAutomations(form.workspaceId, 'form.response.created', {
       form: { title: form.title, id: form.id },
-      response: { id: response.id, by: submitter?.fullName ?? 'Anonyme' },
-      summary: `Nouvelle réponse à « ${form.title} » par ${submitter?.fullName ?? 'Anonyme'} — ${previewAnswers(form, req.body.answers)}`,
+      response: { id: response.id, by: account?.fullName ?? 'Anonyme' },
+      summary: `Nouvelle réponse à « ${form.title} » par ${account?.fullName ?? 'Anonyme'} — ${previewAnswers(form, req.body.answers)}`,
+    });
+
+    await createNotification({
+      userId: form.createdById,
+      actorId: req.user!.id,
+      type: 'FORM_RESPONSE',
+      title: `Nouvelle reponse a « ${form.title} »`,
+      body: `Par ${account?.fullName ?? 'un membre'}`,
+      link: `/forms/${form.id}/responses`,
+      entityType: 'form',
+      entityId: form.id,
+    });
+
+    // Si l'auteur avait ce formulaire en attribution : on le marque comme repondu.
+    await prisma.formAssignee.updateMany({
+      where: { formId: form.id, userId: req.user!.id, respondedAt: null },
+      data: { respondedAt: new Date() },
     });
 
     res.status(201).json(response);

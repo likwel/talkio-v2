@@ -293,14 +293,27 @@ router.post(
 
     // Automatisation : carte deplacee vers une colonne "termine"
     const toColumn = await prisma.column.findUnique({ where: { id: toColumnId } });
-    if (toColumn && DONE_RE.test(toColumn.name)) {
+    const nowDone = !!toColumn && DONE_RE.test(toColumn.name);
+    if (nowDone) {
       runAutomations(card.column.board.workspaceId, 'card.moved.done', {
         card: { title: card.title, id: card.id },
         board: { name: card.column.board.name, id: card.column.boardId },
-        column: toColumn.name,
+        column: toColumn!.name,
         summary: `Tâche terminée : ${card.title} (${card.column.board.name})`,
       });
     }
+
+    // Lien Projet/Kanban <-> Suivi-evaluation : la carte pilote le statut de
+    // l'activite MEAL a laquelle elle est liee (si elle l'est).
+    const linkedActivity = await prisma.activity.findUnique({ where: { cardId: card.id } });
+    if (linkedActivity) {
+      if (nowDone && linkedActivity.status !== 'DONE') {
+        await prisma.activity.update({ where: { id: linkedActivity.id }, data: { status: 'DONE', progress: 100 } });
+      } else if (!nowDone && linkedActivity.status === 'DONE') {
+        await prisma.activity.update({ where: { id: linkedActivity.id }, data: { status: 'IN_PROGRESS' } });
+      }
+    }
+
     res.json({ ok: true });
   }),
 );

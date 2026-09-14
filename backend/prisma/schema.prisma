@@ -53,6 +53,12 @@ model User {
   boardMemberships       BoardMember[]
   createdAutomations     Automation[]         @relation("AutomationCreatedBy")
   createdChannels        Channel[]            @relation("ChannelCreatedBy")
+  assignedActivities     Activity[]           @relation("ActivityAssignee")
+  ownedRisks             Risk[]               @relation("RiskOwner")
+  notifications          Notification[]       @relation("NotificationUser")
+  notificationsActed     Notification[]       @relation("NotificationActor")
+  formAssignments        FormAssignee[]       @relation("FormAssigneeUser")
+  formAssignmentsMade    FormAssignee[]       @relation("FormAssignedBy")
 }
 
 model RefreshToken {
@@ -215,6 +221,7 @@ model ChannelMember {
 enum MessageKind {
   TEXT
   CALL
+  FORM
 }
 
 model Message {
@@ -233,6 +240,9 @@ model Message {
   replies       Message[]   @relation("MessageThread")
   /// Nom de l'auteur d'origine quand le message a ete transfere (repost).
   forwardedFrom String?
+  /// Formulaire partage / integre dans le message (kind = FORM).
+  formId        String?
+  form          Form?       @relation("MessageForm", fields: [formId], references: [id], onDelete: Cascade)
   /// Chiffrement de bout en bout : `body` contient alors le texte chiffré (base64).
   encrypted     Boolean     @default(false)
   iv            String?
@@ -384,6 +394,7 @@ model Card {
 
   assignees CardAssignee[]
   comments  Comment[]
+  linkedActivity Activity?
 
   @@index([columnId, position])
 }
@@ -414,23 +425,50 @@ model Comment {
 // MEAL - Monitoring, Evaluation, Accountability & Learning
 // ---------------------------------------------------------------------------
 
+enum ProjectStatus {
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  ARCHIVED
+}
+
+/// Sante d'execution du projet, saisie par l'equipe M&E.
+enum ProjectHealth {
+  ON_TRACK
+  AT_RISK
+  OFF_TRACK
+}
+
 model Project {
-  id          String    @id @default(cuid())
+  id          String        @id @default(cuid())
   workspaceId String
-  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   name        String
   code        String?
   description String?
+  /// But / objectif general (resume de la theorie du changement).
+  goal        String?
   donor       String?
+  sector      String?
+  location    String?
+  currency    String        @default("USD")
+  status      ProjectStatus @default(ACTIVE)
+  health      ProjectHealth @default(ON_TRACK)
   startDate   DateTime?
   endDate     DateTime?
   createdById String
-  createdBy   User      @relation("ProjectCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdBy   User          @relation("ProjectCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
 
-  indicators MealIndicator[]
-  forms      Form[]
+  indicators  MealIndicator[]
+  forms       Form[]
+  activities  Activity[]
+  budgetLines BudgetLine[]
+  risks       Risk[]
+  feedback    FeedbackEntry[]
+  lessons     Lesson[]
+  reports     PeriodReport[]
 
   @@index([workspaceId])
 }
@@ -454,13 +492,30 @@ model MealIndicator {
   target              Float?
   disaggregation      String[]      @default([])
   meansOfVerification String?
+  /// Hypotheses / risques associes a la ligne du cadre logique.
+  assumptions         String?
   createdAt           DateTime      @default(now())
   updatedAt           DateTime      @updatedAt
 
   measurements MealMeasurement[]
+  targets      IndicatorTarget[]
+  activities   Activity[]
 
   @@unique([projectId, code])
   @@index([projectId])
+}
+
+/// Cible d'un indicateur pour une periode donnee ("2026-Q1", "2026", "2026-03").
+model IndicatorTarget {
+  id          String        @id @default(cuid())
+  indicatorId String
+  indicator   MealIndicator @relation(fields: [indicatorId], references: [id], onDelete: Cascade)
+  period      String
+  target      Float
+  createdAt   DateTime      @default(now())
+
+  @@unique([indicatorId, period])
+  @@index([indicatorId])
 }
 
 model MealMeasurement {
@@ -472,12 +527,170 @@ model MealMeasurement {
   periodEnd    DateTime
   location     String?
   note         String?
+  /// Ventilation beneficiaires (part du total `value`).
+  female       Float?
+  male         Float?
+  youth        Float?
+  disability   Float?
+  /// Donnee verifiee lors d'un controle qualite (DQA).
+  verified     Boolean       @default(false)
+  source       String?
   dimensions   Json?
   recordedById String
   recordedBy   User          @relation(fields: [recordedById], references: [id], onDelete: Cascade)
   createdAt    DateTime      @default(now())
 
   @@index([indicatorId, periodStart])
+}
+
+enum ActivityStatus {
+  PLANNED
+  IN_PROGRESS
+  DONE
+  DELAYED
+  CANCELLED
+}
+
+/// Plan de travail : action operationnelle rattachee au projet (et parfois a un indicateur).
+model Activity {
+  id          String         @id @default(cuid())
+  projectId   String
+  project     Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  indicatorId String?
+  indicator   MealIndicator? @relation(fields: [indicatorId], references: [id], onDelete: SetNull)
+  title       String
+  description String?
+  status      ActivityStatus @default(PLANNED)
+  progress    Int            @default(0)
+  startDate   DateTime?
+  dueDate     DateTime?
+  location    String?
+  assigneeId  String?
+  assignee    User?          @relation("ActivityAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  /// Horodatage de la notification de retard deja envoyee (evite les doublons).
+  overdueNotifiedAt DateTime?
+  /// Evenement d'agenda synchronise (echeance alignee avec le calendrier de l'espace).
+  calendarEventId String?       @unique
+  calendarEvent   CalendarEvent? @relation(fields: [calendarEventId], references: [id], onDelete: SetNull)
+  /// Tache Kanban liee (bouton "Lier une tache" ou regle d'automatisation) :
+  /// son statut synchronise automatiquement le statut de l'activite.
+  cardId      String?        @unique
+  card        Card?          @relation(fields: [cardId], references: [id], onDelete: SetNull)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([projectId, status])
+}
+
+/// Ligne budgetaire : prevu vs depense, par bailleur / categorie.
+model BudgetLine {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  label     String
+  donor     String?
+  category  String?
+  planned   Float    @default(0)
+  spent     Float    @default(0)
+  note      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([projectId])
+}
+
+enum RiskStatus {
+  OPEN
+  MITIGATED
+  CLOSED
+}
+
+/// Registre des risques : probabilite x impact (echelle 1..5) + mesure d'attenuation.
+model Risk {
+  id          String     @id @default(cuid())
+  projectId   String
+  project     Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  likelihood  Int        @default(3)
+  impact      Int        @default(3)
+  mitigation  String?
+  status      RiskStatus @default(OPEN)
+  ownerId     String?
+  owner       User?      @relation("RiskOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@index([projectId, status])
+}
+
+enum FeedbackType {
+  COMPLAINT
+  SUGGESTION
+  QUESTION
+  APPRECIATION
+}
+
+enum FeedbackStatus {
+  NEW
+  IN_REVIEW
+  RESOLVED
+  CLOSED
+}
+
+/// Mecanisme de redevabilite : retours et plaintes des communautes.
+model FeedbackEntry {
+  id          String         @id @default(cuid())
+  projectId   String
+  project     Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  type        FeedbackType   @default(COMPLAINT)
+  channel     String?
+  category    String?
+  sensitive   Boolean        @default(false)
+  summary     String
+  detail      String?
+  reporter    String?
+  location    String?
+  status      FeedbackStatus @default(NEW)
+  resolution  String?
+  receivedAt  DateTime       @default(now())
+  resolvedAt  DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([projectId, status])
+}
+
+/// Registre d'apprentissage : lecons tirees de la mise en oeuvre.
+model Lesson {
+  id             String   @id @default(cuid())
+  projectId      String
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title          String
+  category       String?
+  context        String?
+  insight        String
+  recommendation String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([projectId])
+}
+
+/// Rapport de periode (narratif) ; les chiffres sont recalcules a l'affichage.
+model PeriodReport {
+  id           String   @id @default(cuid())
+  projectId    String
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  period       String
+  title        String
+  narrative    String?
+  achievements String?
+  challenges   String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([projectId])
 }
 
 // ---------------------------------------------------------------------------
@@ -548,6 +761,8 @@ model Form {
   sections  FormSection[]
   fields    FormField[]
   responses FormResponse[]
+  messages  Message[]      @relation("MessageForm")
+  assignees FormAssignee[] @relation("FormAssignees")
 
   @@index([workspaceId])
 }
@@ -695,6 +910,7 @@ model CalendarEvent {
   updatedAt   DateTime @updatedAt
 
   attendees EventAttendee[]
+  activity  Activity?
 
   @@index([calendarId, startsAt])
   @@index([startsAt, endsAt])
@@ -766,4 +982,62 @@ model Automation {
   updatedAt     DateTime  @updatedAt
 
   @@index([workspaceId, enabled])
+}
+
+enum NotificationType {
+  FRIEND_REQUEST
+  FRIEND_ACCEPTED
+  PROJECT_ASSIGNED
+  RISK_ASSIGNED
+  MEASUREMENT_ADDED
+  FORM_RESPONSE
+  FORM_ASSIGNED
+  ACTIVITY_OVERDUE
+  GENERIC
+}
+
+enum FormAssigneeStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+}
+
+/// Attribution d'un formulaire a un utilisateur (il doit l'accepter puis le remplir).
+model FormAssignee {
+  id           String             @id @default(cuid())
+  formId       String
+  form         Form               @relation("FormAssignees", fields: [formId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User               @relation("FormAssigneeUser", fields: [userId], references: [id], onDelete: Cascade)
+  assignedById String?
+  assignedBy   User?              @relation("FormAssignedBy", fields: [assignedById], references: [id], onDelete: SetNull)
+  status       FormAssigneeStatus @default(PENDING)
+  note         String?
+  dueAt        DateTime?
+  respondedAt  DateTime?
+  createdAt    DateTime           @default(now())
+
+  @@unique([formId, userId])
+  @@index([userId, status])
+}
+
+/// Notification in-app (bulle) : demande d'ami, assignation projet, suivi, formulaire…
+model Notification {
+  id         String           @id @default(cuid())
+  userId     String
+  user       User             @relation("NotificationUser", fields: [userId], references: [id], onDelete: Cascade)
+  type       NotificationType
+  title      String
+  body       String?
+  /// Chemin frontend a ouvrir au clic (ex : /meal/projects/xxx?t=workplan).
+  link       String?
+  actorId    String?
+  actor      User?            @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
+  entityType String?
+  entityId   String?
+  readAt     DateTime?
+  createdAt  DateTime         @default(now())
+
+  @@index([userId, readAt])
+  @@index([userId, createdAt])
 }

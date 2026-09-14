@@ -6,6 +6,7 @@ import { IconCheck, IconForms, IconLock } from '@/lib/icons';
 import FormRenderer, { RequiredProgress } from '@/components/FormRenderer';
 import { defaultsFor, validateForm, type Scope } from '@/lib/formLogic';
 import Wordmark from '@/components/Wordmark';
+import { useAuth } from '@/context/AuthContext';
 
 type State = 'loading' | 'ready' | 'unavailable';
 
@@ -58,9 +59,11 @@ async function flushQueue(): Promise<number> {
 
 export default function PublicFormFill() {
   const { formId } = useParams();
+  const { user } = useAuth();
+  const lockedEmail = user?.email ?? null;
   const [state, setState] = useState<State>('loading');
   const [form, setForm] = useState<FormDef | null>(null);
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(lockedEmail ?? '');
   const [values, setValues] = useState<Scope>({});
   const [coords, setCoords] = useState<{ latitude?: number; longitude?: number }>({});
   const [showErrors, setShowErrors] = useState(false);
@@ -89,6 +92,11 @@ export default function PublicFormFill() {
     window.addEventListener('online', tryFlush);
     return () => window.removeEventListener('online', tryFlush);
   }, [tryFlush]);
+
+  // Utilisateur connecte : l'e-mail est celui du compte, non modifiable.
+  useEffect(() => {
+    if (lockedEmail) setEmail(lockedEmail);
+  }, [lockedEmail]);
 
   useEffect(() => {
     let alive = true;
@@ -153,7 +161,7 @@ export default function PublicFormFill() {
     setShowErrors(false);
     if (form) setValues(fresh(form));
     setCoords({});
-    setEmail('');
+    setEmail(lockedEmail ?? '');
   }
 
   return (
@@ -217,13 +225,17 @@ export default function PublicFormFill() {
                 <span className="block text-sm font-medium">
                   Votre adresse e-mail<span className="text-red-500"> *</span>
                   <span className="mt-0.5 block text-xs font-normal text-[var(--text-dim)]">
-                    Nécessaire pour valider votre participation.
+                    {lockedEmail
+                      ? 'Adresse de votre compte connecté — utilisée automatiquement.'
+                      : 'Nécessaire pour valider votre participation.'}
                   </span>
                 </span>
                 <input
-                  className="input mt-1"
+                  className="input mt-1 disabled:cursor-not-allowed disabled:opacity-70"
                   type="email"
                   required
+                  readOnly={!!lockedEmail}
+                  disabled={!!lockedEmail}
                   autoComplete="email"
                   placeholder="vous@exemple.com"
                   value={email}
@@ -238,7 +250,10 @@ export default function PublicFormFill() {
               {busy ? 'Envoi…' : 'Envoyer ma réponse'}
             </button>
             <p className="text-2xs text-[var(--text-dim)]">
-              Ne saisissez jamais de mot de passe dans un formulaire. Réponse anonyme (seul l'e-mail est conservé).
+              Ne saisissez jamais de mot de passe dans un formulaire.{' '}
+              {lockedEmail
+                ? `Vous répondez en tant que ${lockedEmail}.`
+                : "Réponse anonyme (seul l'e-mail est conservé)."}
             </p>
           </form>
         )}

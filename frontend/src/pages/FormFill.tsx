@@ -5,9 +5,11 @@ import type { FormDef } from '@/lib/types';
 import { IconCheck, IconBack } from '@/lib/icons';
 import FormRenderer, { RequiredProgress } from '@/components/FormRenderer';
 import { defaultsFor, validateForm, type Scope } from '@/lib/formLogic';
+import { useAuth } from '@/context/AuthContext';
 
 export default function FormFill() {
   const { formId } = useParams();
+  const { user } = useAuth();
   const [form, setForm] = useState<FormDef | null>(null);
   const [values, setValues] = useState<Scope>({});
   const [coords, setCoords] = useState<{ latitude?: number; longitude?: number }>({});
@@ -44,7 +46,11 @@ export default function FormFill() {
       return;
     }
     try {
-      await api.post(`/forms/${formId}/responses`, { answers: values, ...coords });
+      await api.post(`/forms/${formId}/responses`, {
+        answers: values,
+        email: user?.email,
+        ...coords,
+      });
       setDone(true);
       setShowErrors(false);
       setCount((c) => c + 1);
@@ -81,6 +87,23 @@ export default function FormFill() {
       {error && <div className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-600 dark:bg-red-950/50">{error}</div>}
 
       <form onSubmit={submit} className="space-y-4">
+        {user && (
+          <label className="block rounded-xl border border-[var(--outline)] bg-[var(--surface)] p-4">
+            <span className="block text-sm font-medium">
+              Adresse e-mail
+              <span className="mt-0.5 block text-xs font-normal text-[var(--text-dim)]">
+                Compte connecté — enregistrée automatiquement avec la réponse.
+              </span>
+            </span>
+            <input
+              className="input mt-1 disabled:cursor-not-allowed disabled:opacity-70"
+              type="email"
+              value={user.email}
+              readOnly
+              disabled
+            />
+          </label>
+        )}
         <FormRenderer form={form} values={values} onChange={setValues} onGeo={setCoords} showErrors={showErrors} />
         <button className="btn-primary">Envoyer</button>
       </form>
