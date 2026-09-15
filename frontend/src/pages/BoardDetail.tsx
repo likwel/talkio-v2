@@ -432,7 +432,7 @@ export default function BoardDetail() {
                       </span>
                     </td>
                     <td className={clsx('px-3 py-2', isOverdue(c.dueDate) && 'font-semibold text-red-600')}>
-                      {c.dueDate ? new Date(c.dueDate).toLocaleDateString('fr-FR') : '—'}
+                      {c.dueDate ? fmtDueDate(c.dueDate) : '—'}
                     </td>
                     <td className="px-3 py-2">
                       <span className="flex -space-x-1.5">
@@ -506,7 +506,7 @@ function CardItem({
         </span>
         {card.dueDate && (
           <span className={clsx('text-2xs', isOverdue(card.dueDate) ? 'font-semibold text-red-600' : 'text-[var(--text-dim)]')}>
-            {new Date(card.dueDate).toLocaleDateString('fr-FR')}
+            {fmtDueDate(card.dueDate)}
           </span>
         )}
         {!!card._count?.comments && (
@@ -637,7 +637,7 @@ function CardModal({
     setTitle(card.title);
     setDescription(card.description ?? '');
     setPriority(card.priority);
-    setDueDate(card.dueDate ? card.dueDate.slice(0, 10) : '');
+    setDueDate(toDatetimeLocal(card.dueDate));
     setAssignees(card.assignees ?? []);
     setPickerOpen(false);
     setQ('');
@@ -675,7 +675,7 @@ function CardModal({
         title: title.trim(),
         description: description.trim() || null,
         priority,
-        dueDate: dueDate || null,
+        dueDate: fromDatetimeLocal(dueDate),
       });
       onChanged();
       onClose();
@@ -751,7 +751,7 @@ function CardModal({
             <span className="field-label">Échéance</span>
             <input
               className="input"
-              type="date"
+              type="datetime-local"
               value={dueDate}
               onChange={(e) => setDueDate(e.target.value)}
             />
