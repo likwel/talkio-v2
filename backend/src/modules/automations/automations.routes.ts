@@ -12,12 +12,14 @@ const TRIGGERS = [
   'form.response.created',
   'card.moved.done',
   'card.created',
+  'card.overdue',
   'meal.measurement.created',
   'message.keyword',
   'message.command',
   'message.created',
   'member.joined',
   'channel.created',
+  'schedule.daily',
 ] as const;
 const ACTIONS = [
   'message.post',

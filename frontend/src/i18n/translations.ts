@@ -117,6 +117,7 @@ const fr: Dict = {
   'auto.form.editTitle': 'Modifier la règle',
   'auto.trigger.form.response.created': 'Une réponse de formulaire est envoyée',
   'auto.trigger.card.moved.done': 'Une tâche passe en « Terminé »',
+  'auto.trigger.card.overdue': 'Une tâche dépasse son échéance',
   'auto.trigger.meal.measurement.created': 'Une mesure MEAL est enregistrée',
   'auto.trigger.message.keyword': 'Un message contient un mot-clé',
   'auto.action.message.post': 'Publier un message dans un salon',
@@ -144,6 +145,11 @@ const fr: Dict = {
   'auto.form.targetStatus': 'Statut à appliquer à l’activité',
   'auto.form.cardLinkHint':
     'Fonctionne avec les déclencheurs « tâche créée » ou « tâche déplacée en terminé ». La tâche et l’activité MEAL doivent être dans le même espace de travail.',
+  'auto.trigger.schedule.daily': 'Chaque jour, à heure fixe (briefing planifié)',
+  'auto.form.scheduleTime': 'Heure d’envoi',
+  'auto.form.scheduleWeekdays': 'Jours actifs',
+  'auto.form.scheduleHint':
+    'Un message est envoyé automatiquement chaque jour sélectionné, à l’heure indiquée (fuseau du serveur). Personnalisez librement le contenu ci-dessous — intitulé, questions, sections — pour en faire votre propre modèle de briefing.',
 
   // --- Authentification ---
   'auth.tagline': 'Messagerie, visio, agenda, projets, MEAL',
@@ -369,6 +375,7 @@ const en: Dict = {
   'auto.form.editTitle': 'Edit rule',
   'auto.trigger.form.response.created': 'A form response is submitted',
   'auto.trigger.card.moved.done': 'A task moves to “Done”',
+  'auto.trigger.card.overdue': 'A task passes its due date',
   'auto.trigger.meal.measurement.created': 'A MEAL measurement is recorded',
   'auto.trigger.message.keyword': 'A message contains a keyword',
   'auto.action.message.post': 'Post a message in a channel',
@@ -395,6 +402,11 @@ const en: Dict = {
   'auto.form.targetStatus': 'Status to apply to the activity',
   'auto.form.cardLinkHint':
     'Works with the "task created" or "task moved to done" triggers. The task and the MEAL activity must be in the same workspace.',
+  'auto.trigger.schedule.daily': 'Every day, at a fixed time (scheduled briefing)',
+  'auto.form.scheduleTime': 'Send time',
+  'auto.form.scheduleWeekdays': 'Active days',
+  'auto.form.scheduleHint':
+    'A message is sent automatically on each selected day, at the given time (server timezone). Freely customize the content below — title, questions, sections — to make it your own briefing template.',
 
   'auth.tagline': 'Messaging, video, calendar, projects, MEAL',
   'auth.login.submit': 'Sign in',
@@ -617,6 +629,7 @@ const mg: Dict = {
   'auto.form.editTitle': 'Hanova ny fitsipika',
   'auto.trigger.form.response.created': 'Misy valin-taratasy alefa',
   'auto.trigger.card.moved.done': 'Misy asa lasa « Vita »',
+  'auto.trigger.card.overdue': 'Misy asa tara ny fara-fe-potoana',
   'auto.trigger.meal.measurement.created': 'Misy fandrefesana MEAL voarakitra',
   'auto.trigger.message.keyword': 'Misy hafatra misy teny fanalahidy',
   'auto.action.message.post': 'Handefa hafatra ao amin’ny efitrano',
@@ -643,6 +656,11 @@ const mg: Dict = {
   'auto.form.targetStatus': 'Sata (statut) hampiharina amin’ny asa',
   'auto.form.cardLinkHint':
     'Miasa miaraka amin’ny « tasika noforonina » na « tasika nafindra ho vita ». Tokony ho ao amin’ny sehatra (workspace) iray ihany ny tasika sy ny asa MEAL.',
+  'auto.trigger.schedule.daily': 'Isan’andro, amin’ny ora voafaritra (briefing voatondro)',
+  'auto.form.scheduleTime': 'Ora handefasana',
+  'auto.form.scheduleWeekdays': 'Andro mavitrika',
+  'auto.form.scheduleHint':
+    'Alefa ho azy isan’ny andro voafantina, amin’ny ora voatondro (ora an’ny serveur). Azonao ovaina malalaka ny votoatiny eto ambany — lohateny, fanontaniana, fizarana — mba hahatonga azy ho modely briefing manokana ho anao.',
 
   'auth.tagline': 'Hafatra, video, kalandrie, tetikasa, MEAL',
   'auth.login.submit': 'Hiditra',

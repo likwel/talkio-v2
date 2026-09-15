@@ -11,6 +11,38 @@ import Select from '@/components/Select';
 import { ACTIVITY_STATUS } from '@/components/meal/mealUi';
 
 const ACTIVITY_STATUSES = ['PLANNED', 'IN_PROGRESS', 'DONE', 'DELAYED', 'CANCELLED'] as const;
+const WEEKDAYS = [
+  { value: 1, label: 'Lun' },
+  { value: 2, label: 'Mar' },
+  { value: 3, label: 'Mer' },
+  { value: 4, label: 'Jeu' },
+  { value: 5, label: 'Ven' },
+  { value: 6, label: 'Sam' },
+  { value: 7, label: 'Dim' },
+];
+const DEFAULT_BRIEFING_TEMPLATE = `📋 Débrief quotidien — {{date}}
+
+Merci de préparer les réponses ci-dessous avec l'équipe puis de les partager dans ce fil.
+
+1. Processus de collecte
+• Participants : organisation des informateurs clés, consentement, espace privé, disponibilité
+• Outils : compréhension des questions, durée des entretiens, attention des participants
+• Logistique : enregistrement, prise de notes, changements de planning
+• Difficultés rencontrées et solutions proposées
+
+2. Grandes lignes thématiques
+• Observations intéressantes sur le terrain
+• Qualité des données : lacunes, points à approfondir
+• Validation : informations contradictoires entre membres de l'équipe
+• Thèmes récurrents et différences entre groupes/zones
+
+Questions clés à vérifier chaque jour :
+• Vos données répondent-elles aux questions de recherche du projet ?
+• Quelles lacunes d'information faut-il combler demain ?`;
+
+const DEFAULT_OVERDUE_TEMPLATE = `⏰ Tâche en retard : {{card.title}}
+Projet : {{board.name}} — Colonne : {{column}}
+Échéance dépassée : {{dueDate}}`;
 
 const TRIGGER_IDS: Automation['triggerType'][] = [
   'message.command',
@@ -21,7 +53,9 @@ const TRIGGER_IDS: Automation['triggerType'][] = [
   'form.response.created',
   'card.created',
   'card.moved.done',
+  'card.overdue',
   'meal.measurement.created',
+  'schedule.daily',
 ];
 const ACTION_IDS: Automation['actionType'][] = [
   'message.reply',
@@ -30,6 +64,14 @@ const ACTION_IDS: Automation['actionType'][] = [
   'card.create',
   'meal.activity.create',
   'meal.activity.sync',
+  'http.request',
+  'webhook.post',
+];
+/** Actions valides pour un declencheur planifie : pas de contexte salon/carte d'origine. */
+const SCHEDULE_ACTION_IDS: Automation['actionType'][] = [
+  'message.post',
+  'message.broadcast',
+  'card.create',
   'http.request',
   'webhook.post',
 ];
@@ -204,6 +246,12 @@ function RuleForm({
   const [triggerChannelId, setTriggerChannelId] = useState(
     automation?.triggerConfig?.channelId ?? '',
   );
+  const [scheduleTime, setScheduleTime] = useState(automation?.triggerConfig?.time ?? '08:00');
+  const [scheduleWeekdays, setScheduleWeekdays] = useState<number[]>(
+    automation?.triggerConfig?.weekdays
+      ? automation.triggerConfig.weekdays.split(',').map(Number).filter(Boolean)
+      : [1, 2, 3, 4, 5, 6, 7],
+  );
   const [actionType, setActionType] = useState<Automation['actionType']>(
     automation?.actionType ?? 'message.reply',
   );
@@ -228,6 +276,8 @@ function RuleForm({
     actionType === 'message.broadcast';
   const isHttp = actionType === 'http.request' || actionType === 'webhook.post';
   const isMealAction = actionType === 'meal.activity.create' || actionType === 'meal.activity.sync';
+  const isSchedule = triggerType === 'schedule.daily';
+  const availableActionIds = isSchedule ? SCHEDULE_ACTION_IDS : ACTION_IDS;
 
   const columns = useMemo(
     () => boards.flatMap((b) => (b.columns ?? []).map((c) => ({ id: c.id, label: `${b.name} › ${c.name}` }))),
@@ -243,6 +293,10 @@ function RuleForm({
       if (triggerType === 'message.command') triggerConfig.command = command.trim().replace(/^\//, '');
       if ((triggerType === 'message.created' || triggerType === 'member.joined') && triggerChannelId)
         triggerConfig.channelId = triggerChannelId;
+      if (triggerType === 'schedule.daily') {
+        triggerConfig.time = scheduleTime;
+        triggerConfig.weekdays = scheduleWeekdays.slice().sort().join(',');
+      }
 
       let actionConfig: Record<string, string>;
       if (actionType === 'message.post' || actionType === 'message.reply') {
@@ -275,6 +329,18 @@ function RuleForm({
     }
   }
 
+  function handleTriggerChange(v: string) {
+    const next = v as Automation['triggerType'];
+    setTriggerType(next);
+    if (next === 'schedule.daily') {
+      if (!SCHEDULE_ACTION_IDS.includes(actionType)) setActionType('message.post');
+      if (!template.trim() || template === '{{summary}}') setTemplate(DEFAULT_BRIEFING_TEMPLATE);
+    }
+    if (next === 'card.overdue' && (!template.trim() || template === '{{summary}}')) {
+      setTemplate(DEFAULT_OVERDUE_TEMPLATE);
+    }
+  }
+
   return (
     <div className="space-y-3 rounded-xl border border-[var(--outline)] bg-[var(--surface-2)] p-3">
       {isEdit && (
@@ -294,10 +360,50 @@ function RuleForm({
         <Select
           className="mt-1"
           value={triggerType}
-          onChange={(v) => setTriggerType(v as Automation['triggerType'])}
+          onChange={handleTriggerChange}
           options={TRIGGER_IDS.map((id) => ({ value: id, label: t(`auto.trigger.${id}`) }))}
         />
       </label>
+      {isSchedule && (
+        <div className="space-y-2 rounded-lg bg-[var(--surface)] p-2.5">
+          <label className="block text-xs font-semibold text-[var(--text-dim)]">
+            {t('auto.form.scheduleTime')}
+            <input
+              className="input mt-1 w-32"
+              type="time"
+              value={scheduleTime}
+              onChange={(e) => setScheduleTime(e.target.value)}
+            />
+          </label>
+          <div>
+            <span className="mb-1 block text-xs font-semibold text-[var(--text-dim)]">
+              {t('auto.form.scheduleWeekdays')}
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {WEEKDAYS.map((d) => (
+                <button
+                  key={d.value}
+                  type="button"
+                  onClick={() =>
+                    setScheduleWeekdays((ds) =>
+                      ds.includes(d.value) ? ds.filter((x) => x !== d.value) : [...ds, d.value],
+                    )
+                  }
+                  className={clsx(
+                    'rounded-full px-2.5 py-1 text-2xs font-semibold transition',
+                    scheduleWeekdays.includes(d.value)
+                      ? 'bg-[var(--accent)] text-white'
+                      : 'bg-[var(--surface-2)] text-[var(--text-dim)] hover:text-[var(--text)]',
+                  )}
+                >
+                  {d.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <p className="text-2xs text-[var(--text-dim)]">{t('auto.form.scheduleHint')}</p>
+        </div>
+      )}
       {triggerType === 'message.keyword' && (
         <input
           className="input"
@@ -344,7 +450,7 @@ function RuleForm({
           className="mt-1"
           value={actionType}
           onChange={(v) => setActionType(v as Automation['actionType'])}
-          options={ACTION_IDS.map((id) => ({ value: id, label: t(`auto.action.${id}`) }))}
+          options={availableActionIds.map((id) => ({ value: id, label: t(`auto.action.${id}`) }))}
         />
       </label>
 
@@ -479,7 +585,7 @@ function RuleForm({
         ) : (
           <textarea
             className="input mt-1"
-            rows={postsMessage ? 3 : 2}
+            rows={isSchedule ? 12 : postsMessage ? 3 : 2}
             value={template}
             onChange={(e) => setTemplate(e.target.value)}
           />
@@ -489,7 +595,8 @@ function RuleForm({
           <code>{'{{args}}'}</code>, <code>{'{{command}}'}</code>, <code>{'{{user}}'}</code>,{' '}
           <code>{'{{channel}}'}</code>, <code>{'{{date}}'}</code>, <code>{'{{time}}'}</code>,{' '}
           <code>{'{{summary}}'}</code>, <code>{'{{form.title}}'}</code>,{' '}
-          <code>{'{{indicator.name}}'}</code>
+          <code>{'{{indicator.name}}'}</code>, <code>{'{{card.title}}'}</code>,{' '}
+          <code>{'{{board.name}}'}</code>, <code>{'{{column}}'}</code>, <code>{'{{dueDate}}'}</code>
         </span>
       </label>
       )}
@@ -510,6 +617,7 @@ function RuleForm({
             (actionType === 'message.broadcast' && channelIds.length === 0) ||
             (actionType === 'card.create' && !columnId) ||
             (actionType === 'meal.activity.create' && !mealProjectId) ||
+            (isSchedule && (!scheduleTime || scheduleWeekdays.length === 0)) ||
             (isHttp && !/^https?:\/\//i.test(webhookUrl.trim()))
           }
         >

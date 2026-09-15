@@ -11,6 +11,7 @@ import OverviewTab from '@/components/meal/project/OverviewTab';
 import LogframeTab from '@/components/meal/project/LogframeTab';
 import FormsTab from '@/components/meal/project/FormsTab';
 import QuipsTab from '@/components/meal/project/QuipsTab';
+import TranscriptsTab from '@/components/meal/project/TranscriptsTab';
 import WorkplanTab from '@/components/meal/project/WorkplanTab';
 import BudgetTab from '@/components/meal/project/BudgetTab';
 import AnalyseTab from '@/components/meal/project/AnalyseTab';
@@ -48,6 +49,7 @@ const PHASES = [
     tabs: [
       { id: 'collecte', label: 'Collecte' },
       { id: 'quips', label: 'Enquêtes qualitatives' },
+      { id: 'transcripts', label: 'Entretiens qualitatifs' },
     ],
   },
   {
@@ -181,40 +183,54 @@ export default function ProjectDetail() {
         </div>
       </div>
 
-      <div className="-mx-1 overflow-x-auto border-b border-[var(--outline)] pb-2">
-        <div className="flex items-start gap-1 px-1">
-          {PHASES.map((ph, i) => (
-            <div
-              key={ph.n}
-              className={clsx('flex shrink-0 flex-col gap-1 px-2', i > 0 && 'border-l border-[var(--outline)]')}
-            >
-              <span
-                className="flex items-center gap-1.5 text-2xs font-bold uppercase tracking-wide text-[var(--text-dim)]"
-                title={ph.hint}
-              >
-                <span className="grid h-4 w-4 shrink-0 place-items-center rounded-full bg-[var(--accent-soft)] text-[9px] font-bold text-[var(--accent-strong)]">
-                  {ph.n}
-                </span>
-                {ph.name}
-              </span>
-              <div className="flex gap-1">
-                {ph.tabs.map((t) => (
-                  <button
-                    key={t.id}
-                    onClick={() => setTab(t.id)}
-                    className={clsx(
-                      'shrink-0 whitespace-nowrap rounded-lg px-2.5 py-1 text-sm font-semibold transition',
-                      tab === t.id
-                        ? 'accent-active'
-                        : 'text-[var(--text-dim)] hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/5',
-                    )}
-                  >
-                    {t.label}
-                  </button>
-                ))}
+      <div className="overflow-x-auto rounded-2xl border border-[var(--outline)] bg-[var(--surface)] p-2 sm:p-2.5">
+        <div className="flex min-w-max items-stretch">
+          {PHASES.map((ph, i) => {
+            const phaseActive = ph.tabs.some((t) => t.id === tab);
+            return (
+              <div key={ph.n} className="flex shrink-0 items-stretch">
+                {i > 0 && <div className="mx-3 my-1 w-px shrink-0 self-stretch bg-[var(--outline)]/60 sm:mx-4" />}
+                <div className="flex shrink-0 flex-col gap-1.5 px-0.5">
+                  <span className="flex items-center gap-1.5" title={ph.hint}>
+                    <span
+                      className={clsx(
+                        'grid h-5 w-5 shrink-0 place-items-center rounded-full text-[10px] font-bold transition-colors',
+                        phaseActive
+                          ? 'bg-[var(--accent)] text-white'
+                          : 'bg-[var(--surface-2)] text-[var(--text-dim)]',
+                      )}
+                    >
+                      {ph.n}
+                    </span>
+                    <span
+                      className={clsx(
+                        'text-2xs font-bold uppercase tracking-wider transition-colors',
+                        phaseActive ? 'text-[var(--text)]' : 'text-[var(--text-dim)]',
+                      )}
+                    >
+                      {ph.name}
+                    </span>
+                  </span>
+                  <div className="flex flex-wrap gap-1">
+                    {ph.tabs.map((t) => (
+                      <button
+                        key={t.id}
+                        onClick={() => setTab(t.id)}
+                        className={clsx(
+                          'shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-semibold transition',
+                          tab === t.id
+                            ? 'accent-active shadow-elevation-1'
+                            : 'text-[var(--text-dim)] hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/5',
+                        )}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -222,6 +238,7 @@ export default function ProjectDetail() {
       {tab === 'logframe' && <LogframeTab project={p} reload={reload} />}
       {tab === 'collecte' && <FormsTab project={p} />}
       {tab === 'quips' && <QuipsTab project={p} reload={reload} />}
+      {tab === 'transcripts' && <TranscriptsTab project={p} reload={reload} />}
       {tab === 'workplan' && <WorkplanTab project={p} reload={reload} />}
       {tab === 'budget' && <BudgetTab project={p} reload={reload} />}
       {tab === 'analyse' && <AnalyseTab project={p} />}

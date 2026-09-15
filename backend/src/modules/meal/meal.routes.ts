@@ -79,7 +79,8 @@ type ChildModel =
   | 'periodReport'
   | 'mealMeasurement'
   | 'indicatorTarget'
-  | 'qualitativeInquiry';
+  | 'qualitativeInquiry'
+  | 'qualitativeTranscript';
 
 /** Remonte au projet a partir d'un enregistrement enfant (par son id). */
 async function projectOfChild(model: ChildModel, id: string, userId: string) {
@@ -243,6 +244,7 @@ router.get(
         lessons: { orderBy: { createdAt: 'desc' } },
         reports: { orderBy: { period: 'desc' } },
         qualitativeInquiries: { orderBy: { createdAt: 'desc' } },
+        transcripts: { orderBy: { createdAt: 'desc' } },
       },
     });
 
@@ -989,6 +991,118 @@ router.delete(
   asyncHandler(async (req, res) => {
     await projectOfChild('qualitativeInquiry', req.params.quipsId, req.user!.id);
     await prisma.qualitativeInquiry.delete({ where: { id: req.params.quipsId } });
+    res.status(204).end();
+  }),
+);
+
+// ======================================================================
+//  Transcripts d'entretien qualitatif (FGD, KII, entretien individuel...)
+// ======================================================================
+
+const intervieweeSchema = z.object({
+  name: z.string().max(120).optional().default(''),
+  age: z.string().max(20).optional().default(''),
+  type: z.string().max(60).optional().default(''),
+  maritalStatus: z.string().max(60).optional().default(''),
+  profession: z.string().max(120).optional().default(''),
+});
+
+const transcriptQaSchema = z.object({
+  question: z.string().max(2000),
+  answer: z.string().max(10000).optional().default(''),
+  researcherNotes: z.string().max(10000).optional().default(''),
+});
+
+const transcriptBody = z.object({
+  quipsId: z.string().nullable().optional(),
+  title: z.string().min(2),
+  interviewType: z.string().max(80).nullable().optional(),
+  facilitator: z.string().max(120).nullable().optional(),
+  noteTaker: z.string().max(120).nullable().optional(),
+  location: z.string().max(200).nullable().optional(),
+  interviewDate: z.string().nullable().optional(),
+  startTime: z.string().max(10).nullable().optional(),
+  endTime: z.string().max(10).nullable().optional(),
+  consentObtained: z.boolean().optional(),
+  facilitatorNotes: z.string().nullable().optional(),
+  genderMix: z.string().max(60).nullable().optional(),
+  participantCount: z.number().int().min(0).max(9999).nullable().optional(),
+  interviewees: z.array(intervieweeSchema).max(30).optional(),
+  qa: z.array(transcriptQaSchema).max(60).optional(),
+  status: z.enum(['DRAFT', 'FINAL']).optional(),
+
+  region: z.string().max(120).nullable().optional(),
+  district: z.string().max(120).nullable().optional(),
+  community: z.string().max(120).nullable().optional(),
+  kiiType: z.string().max(80).nullable().optional(),
+  sex: z.string().max(40).nullable().optional(),
+  organizationName: z.string().max(200).nullable().optional(),
+  marketActorType: z.string().max(120).nullable().optional(),
+  round2Date: z.string().nullable().optional(),
+  reviewStep: z.enum(['ORIGINAL', 'REVIEWED', 'REVISED', 'FINAL']).optional(),
+});
+
+router.post(
+  '/projects/:id/transcripts',
+  validate(transcriptBody),
+  asyncHandler(async (req, res) => {
+    const project = await loadProject(req.params.id, req.user!.id);
+    const { quipsId, interviewDate, round2Date, ...rest } = req.body;
+    if (quipsId) {
+      const quips = await prisma.qualitativeInquiry.findUnique({ where: { id: quipsId } });
+      if (!quips || quips.projectId !== project.id) throw badRequest('Etude qualitative introuvable dans ce projet');
+    }
+    const row = await prisma.qualitativeTranscript.create({
+      data: {
+        ...rest,
+        projectId: project.id,
+        quipsId: quipsId || undefined,
+        interviewDate: interviewDate ? new Date(interviewDate) : undefined,
+        round2Date: round2Date ? new Date(round2Date) : undefined,
+        createdById: req.user!.id,
+      },
+    });
+    res.status(201).json(row);
+  }),
+);
+
+router.get(
+  '/transcripts/:transcriptId',
+  asyncHandler(async (req, res) => {
+    await projectOfChild('qualitativeTranscript', req.params.transcriptId, req.user!.id);
+    const row = await prisma.qualitativeTranscript.findUnique({ where: { id: req.params.transcriptId } });
+    res.json(row);
+  }),
+);
+
+router.patch(
+  '/transcripts/:transcriptId',
+  validate(transcriptBody.partial()),
+  asyncHandler(async (req, res) => {
+    const project = await projectOfChild('qualitativeTranscript', req.params.transcriptId, req.user!.id);
+    const { quipsId, interviewDate, round2Date, ...rest } = req.body;
+    if (quipsId) {
+      const quips = await prisma.qualitativeInquiry.findUnique({ where: { id: quipsId } });
+      if (!quips || quips.projectId !== project.id) throw badRequest('Etude qualitative introuvable dans ce projet');
+    }
+    const row = await prisma.qualitativeTranscript.update({
+      where: { id: req.params.transcriptId },
+      data: {
+        ...rest,
+        ...(quipsId !== undefined ? { quipsId: quipsId || null } : {}),
+        ...(interviewDate !== undefined ? { interviewDate: interviewDate ? new Date(interviewDate) : null } : {}),
+        ...(round2Date !== undefined ? { round2Date: round2Date ? new Date(round2Date) : null } : {}),
+      },
+    });
+    res.json(row);
+  }),
+);
+
+router.delete(
+  '/transcripts/:transcriptId',
+  asyncHandler(async (req, res) => {
+    await projectOfChild('qualitativeTranscript', req.params.transcriptId, req.user!.id);
+    await prisma.qualitativeTranscript.delete({ where: { id: req.params.transcriptId } });
     res.status(204).end();
   }),
 );

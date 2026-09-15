@@ -139,13 +139,6 @@ export default function Layout() {
       <BottomNav />
       <IncomingCallModal />
 
-      {/* Web : dock vertical centre-droit (notifications + compte) */}
-      <div className="fixed right-3 top-1/2 z-40 hidden -translate-y-1/2 flex-col items-center gap-1 rounded-2xl border border-[var(--outline)] bg-[var(--surface)] p-1.5 shadow-elevation-3 lg:flex">
-        <NotificationBell panelSide="left" />
-        <span className="my-0.5 h-px w-6 bg-[var(--outline)]" />
-        <AccountMenu align="right" />
-      </div>
-
       {/* Bulles de conversation facon Messenger (bas-droite) */}
       <FloatingUnread />
       <MessageNotifier />

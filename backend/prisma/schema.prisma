@@ -56,6 +56,7 @@ model User {
   assignedActivities     Activity[]           @relation("ActivityAssignee")
   ownedRisks             Risk[]               @relation("RiskOwner")
   createdQuips           QualitativeInquiry[] @relation("QuipsCreatedBy")
+  createdTranscripts     QualitativeTranscript[] @relation("TranscriptCreatedBy")
   notifications          Notification[]       @relation("NotificationUser")
   notificationsActed     Notification[]       @relation("NotificationActor")
   formAssignments        FormAssignee[]       @relation("FormAssigneeUser")
@@ -390,6 +391,9 @@ model Card {
   priority    CardPriority @default(MEDIUM)
   dueDate     DateTime?
   labels      String[]     @default([])
+  /// Horodatage de la derniere alerte "tache en retard" envoyee (automatisation
+  /// card.overdue) : evite de re-notifier a chaque tick du planificateur.
+  overdueNotifiedAt DateTime?
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
@@ -471,6 +475,7 @@ model Project {
   lessons     Lesson[]
   reports     PeriodReport[]
   qualitativeInquiries QualitativeInquiry[]
+  transcripts QualitativeTranscript[]
 
   @@index([workspaceId])
 }
@@ -721,7 +726,85 @@ model QualitativeInquiry {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  transcripts QualitativeTranscript[]
+
   @@index([projectId])
+}
+
+enum TranscriptStatus {
+  DRAFT
+  FINAL
+}
+
+/// Etape du processus interne de revue d'un entretien (tableau de suivi des
+/// entretiens IDEAL) : notes brutes -> revues -> corrigees -> finales.
+enum TranscriptReviewStep {
+  ORIGINAL
+  REVIEWED
+  REVISED
+  FINAL
+}
+
+/// Transcript d'entretien qualitatif (FGD, entretien individuel, KII...) : fiche
+/// de collecte remplie sur le terrain, rattachee a un projet et, si disponible,
+/// a la fiche de planification QuIPS de l'etude correspondante.
+model QualitativeTranscript {
+  id        String  @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  quipsId   String?
+  quips     QualitativeInquiry? @relation(fields: [quipsId], references: [id], onDelete: SetNull)
+
+  title         String
+  /// FGD / KII / Entretien individuel / Observation...
+  interviewType String?
+  facilitator   String?
+  noteTaker     String?
+  /// Region / district / commune.
+  location      String?
+  interviewDate DateTime?
+  /// Heures au format "HH:mm".
+  startTime     String?
+  endTime       String?
+  consentObtained  Boolean @default(false)
+  facilitatorNotes String?
+  /// Composition du groupe : "H/F", "Femmes uniquement"... (matrice de saisie IDEAL).
+  genderMix        String?
+  /// Nombre de participants (matrice de saisie IDEAL).
+  participantCount Int?
+
+  /// Personnes interrogees : [{ name, age, type, maritalStatus, profession }]
+  interviewees Json @default("[]")
+  /// Sujets/questions et notes de l'entretien (matrice de saisie ou Q/R) :
+  /// [{ question, answer, researcherNotes }]
+  qa           Json @default("[]")
+
+  status TranscriptStatus @default(DRAFT)
+
+  // --- Tableau de suivi des entretiens (IDEAL) : localisation detaillee, type
+  // de repondant et acteur, deuxieme passage, et etape de revue interne. ---
+  /// Etat / region.
+  region           String?
+  /// Zone administrative locale (LGA / district).
+  district         String?
+  /// Communaute.
+  community        String?
+  /// Type d'informateur cle : Institutionnel / Communautaire...
+  kiiType          String?
+  sex              String?
+  organizationName String?
+  marketActorType  String?
+  /// Date du 2eme passage (verification / complement d'entretien), si applicable.
+  round2Date       DateTime?
+  reviewStep       TranscriptReviewStep @default(ORIGINAL)
+
+  createdById String
+  createdBy   User     @relation("TranscriptCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([projectId])
+  @@index([quipsId])
 }
 
 /// Registre d'apprentissage : lecons tirees de la mise en oeuvre.

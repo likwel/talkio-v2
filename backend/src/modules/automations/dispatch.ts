@@ -5,12 +5,17 @@ export type TriggerType =
   | 'form.response.created'
   | 'card.moved.done'
   | 'card.created'
+  | 'card.overdue'
   | 'meal.measurement.created'
   | 'message.keyword'
   | 'message.command'
   | 'message.created'
   | 'member.joined'
-  | 'channel.created';
+  | 'channel.created'
+  | 'schedule.daily';
+
+/** Meme regex que boards.routes.ts (duplique ici pour eviter un import circulaire). */
+const DONE_RE = /termin|fini|done|complet|clotur|closed/i;
 
 export type ActionType =
   | 'message.post'
@@ -71,7 +76,7 @@ async function postMessage(channelId: string, authorId: string, body: string) {
   );
 }
 
-async function runAction(
+export async function runAction(
   automation: {
     id: string;
     actionType: string;
@@ -234,5 +239,109 @@ export async function runAutomations(
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error('[automations] echec', err);
+  }
+}
+
+/** Date/heure/jour ISO (1=lundi..7=dimanche) courants dans un fuseau donne. */
+function nowInTimeZone(tz: string): { hhmm: string; dateKey: string; isoWeekday: number } {
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    weekday: 'short',
+  });
+  const parts: Record<string, string> = {};
+  for (const p of fmt.formatToParts(new Date())) parts[p.type] = p.value;
+  const WEEKDAYS: Record<string, number> = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 };
+  return {
+    hhmm: `${parts.hour}:${parts.minute}`,
+    dateKey: `${parts.year}-${parts.month}-${parts.day}`,
+    isoWeekday: WEEKDAYS[parts.weekday] ?? 0,
+  };
+}
+
+/**
+ * Appelee chaque minute par le planificateur (voir scheduler.ts) : declenche les
+ * regles "briefing journalier" (schedule.daily) dont l'heure configuree vient de
+ * sonner, une seule fois par jour (verifie via lastRunAt).
+ */
+export async function checkScheduledAutomations(): Promise<void> {
+  try {
+    const rules = await prisma.automation.findMany({
+      where: { enabled: true, triggerType: 'schedule.daily' },
+    });
+    for (const rule of rules) {
+      try {
+        const tcfg = (rule.triggerConfig ?? {}) as Record<string, string>;
+        const time = (tcfg.time || '').trim();
+        if (!/^\d{2}:\d{2}$/.test(time)) continue;
+        const tz = tcfg.timezone || 'Africa/Nairobi';
+        const weekdays = (tcfg.weekdays || '1,2,3,4,5,6,7')
+          .split(',')
+          .map((s) => Number(s.trim()))
+          .filter(Boolean);
+
+        const { hhmm, dateKey, isoWeekday } = nowInTimeZone(tz);
+        if (hhmm !== time) continue;
+        if (!weekdays.includes(isoWeekday)) continue;
+        if (rule.lastRunAt) {
+          const lastDateKey = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(rule.lastRunAt);
+          if (lastDateKey === dateKey) continue;
+        }
+
+        await runAction(rule, { date: new Date().toLocaleDateString('fr-FR'), time: hhmm });
+        await prisma.automation.update({
+          where: { id: rule.id },
+          data: { lastRunAt: new Date(), runCount: { increment: 1 } },
+        });
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('[automations] echec briefing planifie', rule.id, err);
+      }
+    }
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[automations] echec verification planificateur', err);
+  }
+}
+
+/**
+ * Appelee chaque minute par le planificateur : detecte les taches (cartes
+ * Kanban) dont l'echeance est depassee et declenche la regle "card.overdue"
+ * correspondante, une seule fois par tache (overdueNotifiedAt).
+ */
+export async function checkOverdueCards(): Promise<void> {
+  try {
+    const overdue = await prisma.card.findMany({
+      where: { dueDate: { lt: new Date() }, overdueNotifiedAt: null },
+      include: { column: { include: { board: true } } },
+    });
+    for (const card of overdue) {
+      try {
+        // Colonne "termine" : la tache n'est plus en retard, on l'ignore sans notifier.
+        if (DONE_RE.test(card.column.name)) {
+          await prisma.card.update({ where: { id: card.id }, data: { overdueNotifiedAt: new Date() } });
+          continue;
+        }
+        await runAutomations(card.column.board.workspaceId, 'card.overdue', {
+          card: { id: card.id, title: card.title },
+          board: { id: card.column.board.id, name: card.column.board.name },
+          column: card.column.name,
+          dueDate: card.dueDate ? card.dueDate.toLocaleDateString('fr-FR') : '',
+          summary: `Tâche en retard : ${card.title} (${card.column.board.name})`,
+        });
+        await prisma.card.update({ where: { id: card.id }, data: { overdueNotifiedAt: new Date() } });
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('[automations] echec alerte tache en retard', card.id, err);
+      }
+    }
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[automations] echec verification taches en retard', err);
   }
 }

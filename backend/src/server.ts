@@ -3,11 +3,13 @@ import { createApp } from './app';
 import { env } from './config/env';
 import { initSocket } from './realtime/socket';
 import { prisma } from './lib/prisma';
+import { startAutomationScheduler } from './modules/automations/scheduler';
 
 async function main() {
   const app = createApp();
   const server = createServer(app);
   initSocket(server);
+  if (env.nodeEnv !== 'test') startAutomationScheduler();
 
   server.listen(env.port, () => {
     // eslint-disable-next-line no-console

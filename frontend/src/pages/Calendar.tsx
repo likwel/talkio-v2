@@ -29,6 +29,8 @@ import {
   IconTick,
 } from '@/lib/icons';
 import Select from '@/components/Select';
+import NotificationBell from '@/components/NotificationBell';
+import AccountMenu from '@/components/AccountMenu';
 import MiniMonth from '@/components/calendar/MiniMonth';
 import TimeGridView from '@/components/calendar/TimeGridView';
 import MonthView from '@/components/calendar/MonthView';
@@ -198,6 +200,11 @@ export default function CalendarPage() {
               <IconAdd className="h-5 w-5" />
               <span className="hidden sm:inline">Creer</span>
             </button>
+            <div className="hidden items-center gap-1.5 lg:flex">
+              <span className="mx-0.5 h-6 w-px bg-[var(--outline)]" />
+              <NotificationBell panelSide="down" />
+              <AccountMenu align="right" />
+            </div>
           </div>
         </div>
 

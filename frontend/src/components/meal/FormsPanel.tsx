@@ -30,6 +30,7 @@ import ViewToggle, { useViewMode } from '@/components/ViewToggle';
 import EmptyState from '@/components/EmptyState';
 import Pagination, { usePagination } from '@/components/Pagination';
 import WorkspaceTag from '@/components/WorkspaceTag';
+import FilterSidebar from '@/components/FilterSidebar';
 
 type Status = FormDef['status'];
 
@@ -235,36 +236,15 @@ export default function FormsPanel() {
     }),
     [list],
   );
+  const modeItems = [
+    { key: 'all', label: 'Tous', count: forms.data?.length ?? 0 },
+    { key: 'assigned', label: 'Attribués à moi', count: pendingAssigned || undefined },
+  ];
   const pg = usePagination(list, 12, `${view}-${mode}`);
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <div className="flex rounded-lg border border-[var(--outline)] p-0.5 text-sm font-semibold">
-          <button
-            onClick={() => setMode('all')}
-            className={
-              'rounded-md px-2.5 py-1 transition ' +
-              (mode === 'all' ? 'accent-active' : 'text-[var(--text-dim)] hover:text-[var(--text)]')
-            }
-          >
-            Tous
-          </button>
-          <button
-            onClick={() => setMode('assigned')}
-            className={
-              'flex items-center gap-1.5 rounded-md px-2.5 py-1 transition ' +
-              (mode === 'assigned' ? 'accent-active' : 'text-[var(--text-dim)] hover:text-[var(--text)]')
-            }
-          >
-            Attribués à moi
-            {pendingAssigned > 0 && (
-              <span className="grid h-4 min-w-[16px] place-items-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
-                {pendingAssigned}
-              </span>
-            )}
-          </button>
-        </div>
         <div className="flex flex-wrap items-center gap-1.5">
           <Chip>{list.length} formulaire(s)</Chip>
           <Chip dim>{totals.published} publié(s)</Chip>
@@ -310,7 +290,13 @@ export default function FormsPanel() {
             </Link>
           }
         />
-      ) : view === 'grid' ? (
+      ) : (
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+        <FilterSidebar
+          groups={[{ title: 'Vue', value: mode, onChange: (k) => setMode(k as 'all' | 'assigned'), items: modeItems }]}
+        />
+        <div className="min-w-0 flex-1 space-y-4">
+        {view === 'grid' ? (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {pg.slice.map((f) => (
             <div
@@ -402,6 +388,9 @@ export default function FormsPanel() {
         start={pg.start}
         end={pg.end}
       />
+        </div>
+      </div>
+      )}
 
       <ShareFormModal form={sharing} onClose={() => setSharing(null)} />
       <AssignFormModal

@@ -82,7 +82,7 @@ export default function PortfolioPanel() {
         />
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-[var(--outline)]">
+      <div className="overflow-x-auto rounded-xl border border-[var(--outline)]">
         <table className="w-full min-w-[760px] text-sm">
           <thead className="bg-[var(--surface-2)] text-2xs uppercase tracking-wide text-[var(--text-dim)]">
             <tr>

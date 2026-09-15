@@ -1,4 +1,4 @@
-import { DragEvent, FormEvent, useEffect, useMemo, useState } from 'react';
+import { DragEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
@@ -9,10 +9,11 @@ import Select from '@/components/Select';
 import Pagination, { usePagination } from '@/components/Pagination';
 import { useProfile } from '@/context/ProfileContext';
 import { useDialog } from '@/context/DialogContext';
-import type { Board, BoardStatus, Card, User, WorkspaceDetail } from '@/lib/types';
-import { STATUS_LABEL, ProgressBar } from '@/pages/Boards';
+import { useAuth } from '@/context/AuthContext';
+import type { Board, Card, User, WorkspaceDetail } from '@/lib/types';
 import Avatar from '@/components/Avatar';
 import BoardSettingsModal from '@/components/BoardSettingsModal';
+import PageHeader from '@/components/PageHeader';
 import {
   IconComment,
   IconBack,
@@ -22,6 +23,9 @@ import {
   IconForms,
   IconClose,
   IconDelete,
+  IconSearch,
+  IconFilter,
+  IconChevronDown,
 } from '@/lib/icons';
 
 const PRIORITY_LABEL: Record<string, string> = {
@@ -37,7 +41,160 @@ const PRIORITY_STYLE: Record<string, string> = {
   HIGH: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300',
   URGENT: 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300',
 };
-const isOverdue = (d?: string | null) => !!d && new Date(d) < new Date(new Date().toDateString());
+const isOverdue = (d?: string | null) => !!d && new Date(d) < new Date();
+const fmtDueDate = (d: string) => new Date(d).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
+
+/** Convertit une date ISO (UTC) en valeur locale pour <input type="datetime-local">. */
+function toDatetimeLocal(iso?: string | null): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+/** Convertit une valeur <input type="datetime-local"> (heure locale du navigateur) en ISO UTC pour l'API. */
+function fromDatetimeLocal(local: string): string | null {
+  if (!local) return null;
+  const d = new Date(local);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+/** Barre de progression du projet, plus lisible : couleur selon l'avancement + pourcentage en gras. */
+function ProjectProgress({ progress }: { progress: { total: number; done: number; pct: number } }) {
+  const tone = progress.pct >= 75 ? 'emerald' : progress.pct >= 40 ? 'accent' : 'amber';
+  const barCls = tone === 'emerald' ? 'bg-emerald-500' : tone === 'amber' ? 'bg-amber-500' : 'bg-[var(--accent)]';
+  const textCls =
+    tone === 'emerald'
+      ? 'text-emerald-600 dark:text-emerald-400'
+      : tone === 'amber'
+        ? 'text-amber-600 dark:text-amber-400'
+        : 'text-[var(--accent-strong)]';
+  return (
+    <span className="flex min-w-[200px] items-center gap-2.5">
+      <span className="h-2 flex-1 overflow-hidden rounded-full bg-[var(--surface-2)]">
+        <span
+          className={clsx('block h-full rounded-full transition-[width]', barCls)}
+          style={{ width: `${Math.min(100, Math.max(0, progress.pct))}%` }}
+        />
+      </span>
+      <span className={clsx('shrink-0 text-xs font-bold', textCls)}>{progress.pct}%</span>
+      <span className="shrink-0 text-2xs">
+        {progress.done}/{progress.total} tâche(s)
+      </span>
+    </span>
+  );
+}
+
+/**
+ * Bouton unique « Filtres » qui ouvre un panneau regroupant les deux filtres
+ * réellement appliqués à la liste des tâches : priorité et statut (colonne).
+ */
+function FilterMenu({
+  priorityFilter,
+  setPriorityFilter,
+  columnFilter,
+  setColumnFilter,
+  columns,
+}: {
+  priorityFilter: 'all' | Card['priority'];
+  setPriorityFilter: (v: 'all' | Card['priority']) => void;
+  columnFilter: string;
+  setColumnFilter: (v: string) => void;
+  columns: { id: string; name: string }[];
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener('mousedown', close);
+    return () => window.removeEventListener('mousedown', close);
+  }, [open]);
+
+  const activeCount = (priorityFilter !== 'all' ? 1 : 0) + (columnFilter !== 'all' ? 1 : 0);
+
+  return (
+    <div ref={ref} className="relative shrink-0">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={clsx('btn-outlined h-9 gap-1.5', open && 'accent-active')}
+      >
+        <IconFilter className="h-4 w-4" /> Filtres
+        {activeCount > 0 && (
+          <span className="grid h-4 min-w-[16px] place-items-center rounded-full bg-[var(--accent)] px-1 text-[10px] font-bold text-white">
+            {activeCount}
+          </span>
+        )}
+        <IconChevronDown className={clsx('h-4 w-4 transition-transform', open && 'rotate-180')} />
+      </button>
+
+      {open && (
+        <div className="absolute left-0 top-full z-30 mt-2 w-64 space-y-3 rounded-xl border border-[var(--outline)] bg-[var(--surface)] p-3 shadow-elevation-3">
+          <div>
+            <div className="mb-1.5 text-2xs font-bold uppercase tracking-wide text-[var(--text-dim)]">Priorité</div>
+            <div className="flex flex-wrap gap-1.5">
+              {(['all', 'URGENT', 'HIGH', 'MEDIUM', 'LOW'] as const).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setPriorityFilter(p)}
+                  className={clsx(
+                    'rounded-full px-2.5 py-1 text-xs font-medium transition',
+                    priorityFilter === p
+                      ? 'accent-active'
+                      : 'bg-[var(--surface-2)] text-[var(--text-dim)] hover:text-[var(--text)]',
+                  )}
+                >
+                  {p === 'all' ? 'Toutes' : PRIORITY_LABEL[p]}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="h-px bg-[var(--outline)]" />
+
+          <div>
+            <div className="mb-1.5 text-2xs font-bold uppercase tracking-wide text-[var(--text-dim)]">
+              Statut (colonne)
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                onClick={() => setColumnFilter('all')}
+                className={clsx(
+                  'rounded-full px-2.5 py-1 text-xs font-medium transition',
+                  columnFilter === 'all'
+                    ? 'accent-active'
+                    : 'bg-[var(--surface-2)] text-[var(--text-dim)] hover:text-[var(--text)]',
+                )}
+              >
+                Toutes
+              </button>
+              {columns.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => setColumnFilter(c.id)}
+                  className={clsx(
+                    'rounded-full px-2.5 py-1 text-xs font-medium transition',
+                    columnFilter === c.id
+                      ? 'accent-active'
+                      : 'bg-[var(--surface-2)] text-[var(--text-dim)] hover:text-[var(--text)]',
+                  )}
+                >
+                  {c.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function BoardDetail() {
   const { boardId } = useParams();
@@ -47,6 +204,9 @@ export default function BoardDetail() {
   const [view, setView] = useState<'kanban' | 'list'>('kanban');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [openCard, setOpenCard] = useState<Card | null>(null);
+  const [search, setSearch] = useState('');
+  const [priorityFilter, setPriorityFilter] = useState<'all' | Card['priority']>('all');
+  const [columnFilter, setColumnFilter] = useState('all');
 
   const board = useQuery({
     queryKey: ['board', boardId],
@@ -66,10 +226,6 @@ export default function BoardDetail() {
     };
   }, [boardId, qc]);
 
-  async function setStatus(status: BoardStatus) {
-    await api.patch(`/boards/${boardId}`, { status });
-    board.refetch();
-  }
   async function addColumn(e: FormEvent) {
     e.preventDefault();
     if (!newColumn.trim()) return;
@@ -77,9 +233,9 @@ export default function BoardDetail() {
     setNewColumn('');
     board.refetch();
   }
-  async function addCard(columnId: string, title: string) {
+  async function addCard(columnId: string, title: string, assigneeId?: string) {
     if (!title.trim()) return;
-    await api.post(`/boards/columns/${columnId}/cards`, { title });
+    await api.post(`/boards/columns/${columnId}/cards`, { title, assigneeId: assigneeId || undefined });
     board.refetch();
   }
   async function onDrop(e: DragEvent, toColumnId: string, toPosition: number) {
@@ -90,12 +246,25 @@ export default function BoardDetail() {
     board.refetch();
   }
 
-  const allCards = useMemo(
+  function matchesCard(c: Card) {
+    if (priorityFilter !== 'all' && c.priority !== priorityFilter) return false;
+    if (columnFilter !== 'all' && c.columnId !== columnFilter) return false;
+    const q = search.trim().toLowerCase();
+    if (q && !c.title.toLowerCase().includes(q) && !(c.description ?? '').toLowerCase().includes(q)) return false;
+    return true;
+  }
+  const filterActive = search.trim() !== '' || priorityFilter !== 'all' || columnFilter !== 'all';
+
+  const rawCards = useMemo(
     () =>
       (board.data?.columns ?? []).flatMap((c) => c.cards.map((card) => ({ ...card, columnName: c.name }))),
     [board.data],
   );
-  const cardsPg = usePagination(allCards, 25, `${boardId}|${view}`);
+  const allCards = useMemo(
+    () => rawCards.filter(matchesCard),
+    [rawCards, search, priorityFilter, columnFilter],
+  );
+  const cardsPg = usePagination(allCards, 25, `${boardId}|${view}|${search}|${priorityFilter}|${columnFilter}`);
 
   if (board.isLoading) return <div className="p-6 text-[var(--text-dim)]">Chargement…</div>;
   if (!board.data) return <div className="p-6">Projet introuvable</div>;
@@ -103,81 +272,102 @@ export default function BoardDetail() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* --- En-tete projet --- */}
-      <div className="space-y-2 border-b border-[var(--outline)] px-3 py-2.5 sm:px-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <Link to="/projects" className="icon-btn shrink-0" aria-label="Retour">
+      {/* --- En-tete projet : meme gabarit que /projects (PageHeader) --- */}
+      <PageHeader
+        icon={
+          <Link to="/projects" className="icon-btn -ml-1 shrink-0" aria-label="Retour">
             <IconBack className="h-5 w-5" />
           </Link>
-          {b.color && <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: b.color }} />}
-          <h1 className="min-w-0 flex-1 truncate text-md font-bold sm:flex-none sm:text-lg">{b.name}</h1>
-          <Select
-            className="h-9 w-36 shrink-0"
-            aria-label="Statut du projet"
-            value={b.status}
-            onChange={(v) => setStatus(v as BoardStatus)}
-            options={(Object.keys(STATUS_LABEL) as BoardStatus[]).map((s) => ({ value: s, label: STATUS_LABEL[s] }))}
+        }
+        title={b.name}
+      >
+        <button className="icon-btn" title="Paramètres du projet" onClick={() => setSettingsOpen(true)}>
+          <IconSettings className="h-5 w-5" />
+        </button>
+      </PageHeader>
+
+      {/* --- Informations du projet --- */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-[var(--outline)] px-3 py-2 text-xs text-[var(--text-dim)] sm:px-4">
+        {b.progress && b.progress.total > 0 && <ProjectProgress progress={b.progress} />}
+        {b.lead && (
+          <span className="flex items-center gap-1">
+            <Avatar id={b.lead.id} name={b.lead.fullName} src={b.lead.avatarUrl} size={20} />
+            Chef de projet : {b.lead.fullName}
+          </span>
+        )}
+        {b.members && b.members.length > 0 && (
+          <span className="flex items-center">
+            <span className="mr-1">Équipe :</span>
+            <span className="flex -space-x-1.5">
+              {b.members.slice(0, 6).map((m) => (
+                <span key={m.user.id} title={m.user.fullName} className="rounded-full ring-2 ring-[var(--surface)]">
+                  <Avatar id={m.user.id} name={m.user.fullName} src={m.user.avatarUrl} size={20} />
+                </span>
+              ))}
+            </span>
+          </span>
+        )}
+        {(b.startDate || b.endDate) && (
+          <span>
+            {b.startDate ? new Date(b.startDate).toLocaleDateString('fr-FR') : '…'} →{' '}
+            {b.endDate ? new Date(b.endDate).toLocaleDateString('fr-FR') : '…'}
+          </span>
+        )}
+      </div>
+
+      {/* --- Recherche, filtre de statut, filtre de priorité, mode de vue --- */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-[var(--outline)] px-3 py-2 sm:px-4">
+        <div className="relative min-w-[180px] flex-1">
+          <IconSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-dim)]" />
+          <input
+            className="input h-9 pl-9 pr-8"
+            placeholder="Rechercher une tâche…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
           />
-
-          <div className="flex w-full items-center gap-1 sm:ml-auto sm:w-auto">
-            <div className="flex rounded-lg border border-[var(--outline)] p-0.5">
-              <button
-                onClick={() => setView('kanban')}
-                className={clsx('flex h-7 items-center gap-1 rounded-md px-2 text-xs font-semibold', view === 'kanban' && 'accent-active')}
-              >
-                <IconKanban className="h-4 w-4" /> Kanban
-              </button>
-              <button
-                onClick={() => setView('list')}
-                className={clsx('flex h-7 items-center gap-1 rounded-md px-2 text-xs font-semibold', view === 'list' && 'accent-active')}
-              >
-                <IconForms className="h-4 w-4" /> Liste
-              </button>
-            </div>
-            <button className="icon-btn ml-auto sm:ml-0" title="Paramètres du projet" onClick={() => setSettingsOpen(true)}>
-              <IconSettings className="h-5 w-5" />
+          {search && (
+            <button
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-[var(--text-dim)] hover:text-[var(--text)]"
+              onClick={() => setSearch('')}
+              aria-label="Effacer la recherche"
+            >
+              <IconClose className="h-4 w-4" />
             </button>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--text-dim)]">
-          {b.progress && (
-            <span className="flex min-w-[160px] items-center gap-2">
-              <ProgressBar pct={b.progress.pct} />
-              {b.progress.done}/{b.progress.total} · {b.progress.pct}%
-            </span>
-          )}
-          {b.lead && (
-            <span className="flex items-center gap-1">
-              <Avatar id={b.lead.id} name={b.lead.fullName} src={b.lead.avatarUrl} size={20} />
-              Chef de projet : {b.lead.fullName}
-            </span>
-          )}
-          {b.members && b.members.length > 0 && (
-            <span className="flex items-center">
-              <span className="mr-1">Équipe :</span>
-              <span className="flex -space-x-1.5">
-                {b.members.slice(0, 6).map((m) => (
-                  <span key={m.user.id} title={m.user.fullName} className="rounded-full ring-2 ring-[var(--surface)]">
-                    <Avatar id={m.user.id} name={m.user.fullName} src={m.user.avatarUrl} size={20} />
-                  </span>
-                ))}
-              </span>
-            </span>
-          )}
-          {(b.startDate || b.endDate) && (
-            <span>
-              {b.startDate ? new Date(b.startDate).toLocaleDateString('fr-FR') : '…'} →{' '}
-              {b.endDate ? new Date(b.endDate).toLocaleDateString('fr-FR') : '…'}
-            </span>
           )}
         </div>
+        <FilterMenu
+          priorityFilter={priorityFilter}
+          setPriorityFilter={setPriorityFilter}
+          columnFilter={columnFilter}
+          setColumnFilter={setColumnFilter}
+          columns={b.columns ?? []}
+        />
+        <div className="flex shrink-0 rounded-lg border border-[var(--outline)] p-0.5">
+          <button
+            onClick={() => setView('kanban')}
+            className={clsx('flex h-7 items-center gap-1 rounded-md px-2 text-xs font-semibold', view === 'kanban' && 'accent-active')}
+          >
+            <IconKanban className="h-4 w-4" /> Kanban
+          </button>
+          <button
+            onClick={() => setView('list')}
+            className={clsx('flex h-7 items-center gap-1 rounded-md px-2 text-xs font-semibold', view === 'list' && 'accent-active')}
+          >
+            <IconForms className="h-4 w-4" /> Liste
+          </button>
+        </div>
+        <span className="shrink-0 text-xs font-semibold text-[var(--text-dim)]">
+          {allCards.length} tâche{allCards.length > 1 ? 's' : ''}
+          {filterActive && ` (sur ${rawCards.length})`}
+        </span>
       </div>
 
       {/* --- Vue --- */}
       {view === 'kanban' ? (
         <div className="flex flex-1 gap-4 overflow-x-auto p-4">
-          {b.columns?.map((col) => (
+          {b.columns?.map((col) => {
+            const visibleCards = col.cards.filter(matchesCard);
+            return (
             <div
               key={col.id}
               className="flex w-72 shrink-0 flex-col rounded-2xl bg-[var(--surface-2)] p-3"
@@ -186,22 +376,25 @@ export default function BoardDetail() {
             >
               <div className="mb-2 flex items-center justify-between px-2">
                 <span className="text-sm font-medium">{col.name}</span>
-                <span className="text-xs text-[var(--text-dim)]">{col.cards.length}</span>
+                <span className="text-xs text-[var(--text-dim)]">
+                  {filterActive ? `${visibleCards.length}/${col.cards.length}` : col.cards.length}
+                </span>
               </div>
               <div className="flex-1 space-y-2">
-                {col.cards.map((card, idx) => (
+                {visibleCards.map((card) => (
                   <CardItem
                     key={card.id}
                     card={card}
                     onOpen={() => setOpenCard(card)}
                     onDragStart={() => setDrag({ cardId: card.id })}
-                    onDrop={(e) => onDrop(e, col.id, idx)}
+                    onDrop={(e) => onDrop(e, col.id, col.cards.findIndex((x) => x.id === card.id))}
                   />
                 ))}
               </div>
-              <AddCard onAdd={(t) => addCard(col.id, t)} />
+              <AddCard members={b.members ?? []} onAdd={(t, a) => addCard(col.id, t, a)} />
             </div>
-          ))}
+            );
+          })}
           <form onSubmit={addColumn} className="w-72 shrink-0">
             <input
               className="input surface"
@@ -333,9 +526,20 @@ function CardItem({
   );
 }
 
-function AddCard({ onAdd }: { onAdd: (title: string) => void }) {
+function AddCard({
+  members,
+  onAdd,
+}: {
+  members: { user: Pick<User, 'id' | 'fullName' | 'avatarUrl'> }[];
+  onAdd: (title: string, assigneeId?: string) => void;
+}) {
+  const { user } = useAuth();
   const [value, setValue] = useState('');
+  const [assigneeId, setAssigneeId] = useState('');
   const [open, setOpen] = useState(false);
+  const memberOptions = members.some((m) => m.user.id === user?.id) || !user
+    ? members
+    : [{ user: { id: user.id, fullName: user.fullName, avatarUrl: user.avatarUrl } }, ...members];
   if (!open)
     return (
       <button onClick={() => setOpen(true)} className="btn-text btn-sm mt-2 w-full justify-start">
@@ -344,11 +548,12 @@ function AddCard({ onAdd }: { onAdd: (title: string) => void }) {
     );
   return (
     <form
-      className="mt-2"
+      className="mt-2 space-y-1.5"
       onSubmit={(e) => {
         e.preventDefault();
-        onAdd(value);
+        onAdd(value, assigneeId);
         setValue('');
+        setAssigneeId('');
         setOpen(false);
       }}
     >
@@ -360,9 +565,40 @@ function AddCard({ onAdd }: { onAdd: (title: string) => void }) {
         onChange={(e) => setValue(e.target.value)}
         placeholder="Titre de la tâche"
       />
-      <div className="mt-2 flex gap-1">
+      {memberOptions.length > 0 && (
+        <div className="flex items-center gap-1.5">
+          <Select
+            className="h-8 flex-1 text-xs"
+            value={assigneeId}
+            onChange={setAssigneeId}
+            placeholder="Assigner à (facultatif)"
+            options={[
+              { value: '', label: 'Non assigné' },
+              ...memberOptions.map((m) => ({ value: m.user.id, label: m.user.fullName })),
+            ]}
+          />
+          {user && (
+            <button
+              type="button"
+              className={clsx('btn-text btn-sm shrink-0 whitespace-nowrap', assigneeId === user.id && 'accent-active')}
+              onClick={() => setAssigneeId((cur) => (cur === user.id ? '' : user.id))}
+              title="M'assigner cette tâche"
+            >
+              Moi-même
+            </button>
+          )}
+        </div>
+      )}
+      <div className="flex gap-1">
         <button className="btn-primary btn-sm">Ajouter</button>
-        <button type="button" className="btn-text btn-sm" onClick={() => setOpen(false)}>
+        <button
+          type="button"
+          className="btn-text btn-sm"
+          onClick={() => {
+            setOpen(false);
+            setAssigneeId('');
+          }}
+        >
           Annuler
         </button>
       </div>
@@ -385,6 +621,7 @@ function CardModal({
   onChanged: () => void;
 }) {
   const { openProfile } = useProfile();
+  const { user: me } = useAuth();
   const dialog = useDialog();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -524,9 +761,19 @@ function CardModal({
         <div>
           <div className="mb-1.5 flex items-center justify-between">
             <span className="field-label mb-0">Assigné·es ({assignees.length})</span>
-            <button className="btn-text btn-sm" onClick={() => setPickerOpen((v) => !v)}>
-              <IconAdd className="h-4 w-4" /> Assigner
-            </button>
+            <div className="flex items-center gap-1">
+              {me && (
+                <button
+                  className={clsx('btn-text btn-sm', assignedIds.has(me.id) && 'accent-active')}
+                  onClick={() => toggleAssignee(me)}
+                >
+                  {assignedIds.has(me.id) ? 'Me retirer' : 'M’assigner'}
+                </button>
+              )}
+              <button className="btn-text btn-sm" onClick={() => setPickerOpen((v) => !v)}>
+                <IconAdd className="h-4 w-4" /> Assigner
+              </button>
+            </div>
           </div>
 
           {assignees.length > 0 ? (

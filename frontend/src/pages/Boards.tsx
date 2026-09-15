@@ -5,14 +5,26 @@ import clsx from 'clsx';
 import { api } from '@/lib/api';
 import { useWorkspace } from '@/context/WorkspaceContext';
 import type { Board, BoardStatus } from '@/lib/types';
-import { IconAdd, IconKanban, IconClose, IconEdit } from '@/lib/icons';
+import { IconAdd, IconKanban, IconClose, IconEdit, IconSearch, IconSort } from '@/lib/icons';
 import ViewToggle, { useViewMode } from '@/components/ViewToggle';
 import EmptyState from '@/components/EmptyState';
 import Pagination, { usePagination } from '@/components/Pagination';
 import BoardSettingsModal from '@/components/BoardSettingsModal';
 import Avatar from '@/components/Avatar';
 import PageHeader from '@/components/PageHeader';
+import Select from '@/components/Select';
 import WorkspaceTag, { WorkspacePicker } from '@/components/WorkspaceTag';
+import FilterSidebar from '@/components/FilterSidebar';
+
+type SortKey = 'recent' | 'oldest' | 'name-asc' | 'name-desc' | 'due' | 'progress';
+const SORT_OPTIONS: { value: SortKey; label: string }[] = [
+  { value: 'recent', label: 'Plus récents' },
+  { value: 'oldest', label: 'Plus anciens' },
+  { value: 'name-asc', label: 'Nom (A → Z)' },
+  { value: 'name-desc', label: 'Nom (Z → A)' },
+  { value: 'due', label: 'Échéance la plus proche' },
+  { value: 'progress', label: 'Progression décroissante' },
+];
 
 export const STATUS_LABEL: Record<BoardStatus, string> = {
   ACTIVE: 'Actif',
@@ -49,6 +61,9 @@ export default function Boards() {
   const [name, setName] = useState('');
   const [wsId, setWsId] = useState('');
   const [filter, setFilter] = useState<'all' | BoardStatus>('all');
+  const [wsFilter, setWsFilter] = useState('all');
+  const [search, setSearch] = useState('');
+  const [sortBy, setSortBy] = useState<SortKey>('recent');
   const [view, setView] = useViewMode('boards');
   const [addOpen, setAddOpen] = useState(false);
   const [editBoard, setEditBoard] = useState<Board | null>(null);
@@ -73,13 +88,62 @@ export default function Boards() {
     if (name.trim()) createBoard.mutate();
   }
 
-  const shown = useMemo(
-    () => (boards.data ?? []).filter((b) => filter === 'all' || b.status === filter),
-    [boards.data, filter],
+  const filtered = useMemo(
+    () =>
+      (boards.data ?? []).filter(
+        (b) => (filter === 'all' || b.status === filter) && (wsFilter === 'all' || b.workspaceId === wsFilter),
+      ),
+    [boards.data, filter, wsFilter],
   );
 
+  const shown = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const list = q
+      ? filtered.filter((b) => b.name.toLowerCase().includes(q) || b.description?.toLowerCase().includes(q))
+      : filtered;
+    const sorted = [...list].sort((a, b) => {
+      switch (sortBy) {
+        case 'name-asc':
+          return a.name.localeCompare(b.name, 'fr');
+        case 'name-desc':
+          return b.name.localeCompare(a.name, 'fr');
+        case 'due':
+          return (a.endDate ? new Date(a.endDate).getTime() : Infinity) - (b.endDate ? new Date(b.endDate).getTime() : Infinity);
+        case 'progress':
+          return (b.progress?.pct ?? -1) - (a.progress?.pct ?? -1);
+        case 'oldest':
+          return (a.createdAt ? new Date(a.createdAt).getTime() : 0) - (b.createdAt ? new Date(b.createdAt).getTime() : 0);
+        case 'recent':
+        default:
+          return (b.createdAt ? new Date(b.createdAt).getTime() : 0) - (a.createdAt ? new Date(a.createdAt).getTime() : 0);
+      }
+    });
+    return sorted;
+  }, [filtered, search, sortBy]);
+
   const total = boards.data?.length ?? 0;
-  const pg = usePagination(shown, 12, `${filter}|${view}`);
+  const pg = usePagination(shown, 12, `${filter}|${wsFilter}|${search}|${sortBy}|${view}`);
+
+  const STATUSES = ['all', 'ACTIVE', 'ON_HOLD', 'COMPLETED', 'ARCHIVED'] as const;
+  const statusItems = STATUSES.map((s) => ({
+    key: s,
+    label: s === 'all' ? 'Tous' : STATUS_LABEL[s],
+    count: s === 'all' ? total : (boards.data ?? []).filter((b) => b.status === s).length,
+  }));
+  const workspaceItems = [
+    { key: 'all', label: 'Tous les espaces', count: total },
+    ...workspaces.map((w) => ({
+      key: w.id,
+      label: w.isPersonal ? 'Personnel' : w.name,
+      count: (boards.data ?? []).filter((b) => b.workspaceId === w.id).length,
+    })),
+  ];
+  const hasActiveFilters = filter !== 'all' || wsFilter !== 'all' || search.trim() !== '';
+  function resetFilters() {
+    setFilter('all');
+    setWsFilter('all');
+    setSearch('');
+  }
 
   return (
     <div className="flex h-full flex-col">
@@ -91,7 +155,7 @@ export default function Boards() {
       </PageHeader>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="page max-w-8xl space-y-5">
+        <div className="page max-w-8xl space-y-4">
       {addOpen && (
         <form onSubmit={submit} className="card flex flex-wrap items-end gap-2">
           <label className="min-w-[220px] flex-1">
@@ -116,24 +180,63 @@ export default function Boards() {
         </form>
       )}
 
-      {/* Barre d'outils */}
-      <div className="flex flex-wrap items-center gap-1.5">
-        <span className="mr-1 text-sm font-semibold text-[var(--text-dim)]">{total} projet(s)</span>
-        {(['all', 'ACTIVE', 'ON_HOLD', 'COMPLETED', 'ARCHIVED'] as const).map((s) => (
-          <button
-            key={s}
-            onClick={() => setFilter(s)}
-            className={clsx(
-              'chip',
-              filter === s ? 'border-[var(--accent)] accent-active' : 'text-[var(--text-dim)]',
-            )}
-          >
-            {s === 'all' ? 'Tous' : STATUS_LABEL[s]}
-          </button>
-        ))}
-        <div className="ml-auto">
-          <ViewToggle value={view} onChange={setView} />
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+        <FilterSidebar
+          onReset={hasActiveFilters ? resetFilters : undefined}
+          groups={[
+            {
+              title: 'Statut',
+              value: filter,
+              onChange: (k) => setFilter(k as typeof filter),
+              items: statusItems,
+            },
+            ...(workspaces.length > 1
+              ? [
+                  {
+                    title: 'Espace de travail',
+                    value: wsFilter,
+                    onChange: setWsFilter,
+                    items: workspaceItems,
+                  },
+                ]
+              : []),
+          ]}
+        />
+        <div className="min-w-0 flex-1 space-y-4">
+      {/* Barre d'outils : recherche + tri + affichage */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[200px] flex-1">
+          <IconSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-dim)]" />
+          <input
+            className="input h-9 pl-9 pr-8"
+            placeholder="Rechercher un projet…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          {search && (
+            <button
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-[var(--text-dim)] hover:text-[var(--text)]"
+              onClick={() => setSearch('')}
+              aria-label="Effacer la recherche"
+            >
+              <IconClose className="h-4 w-4" />
+            </button>
+          )}
         </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <IconSort className="hidden h-4 w-4 text-[var(--text-dim)] sm:block" />
+          <Select
+            className="h-9 w-44"
+            aria-label="Trier par"
+            value={sortBy}
+            onChange={(v) => setSortBy(v as SortKey)}
+            options={SORT_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+          />
+        </div>
+        <ViewToggle value={view} onChange={setView} />
+        <span className="w-full shrink-0 text-2xs text-[var(--text-dim)] sm:w-auto sm:text-sm sm:font-semibold">
+          {pg.total} projet(s)
+        </span>
       </div>
 
       {total === 0 && !boards.isLoading ? (
@@ -244,6 +347,8 @@ export default function Boards() {
         start={pg.start}
         end={pg.end}
       />
+        </div>
+      </div>
         </div>
       </div>
 

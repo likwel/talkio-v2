@@ -90,4 +90,6 @@ export {
   MdLinkOff as IconUnlink,
   MdOutlineFactCheck as IconChecklist,
   MdOutlinePrint as IconPrint,
+  MdOutlineFilterList as IconFilter,
+  MdOutlineSwapVert as IconSort,
 } from 'react-icons/md';

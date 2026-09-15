@@ -5,7 +5,8 @@ import ColorPicker from '@/components/ColorPicker';
 import Select from '@/components/Select';
 import { api } from '@/lib/api';
 import { useProfile } from '@/context/ProfileContext';
-import type { Board, WorkspaceDetail } from '@/lib/types';
+import type { Board, BoardStatus, WorkspaceDetail } from '@/lib/types';
+import { STATUS_LABEL } from '@/pages/Boards';
 import Avatar from '@/components/Avatar';
 import { IconAdd, IconClose } from '@/lib/icons';
 
@@ -23,6 +24,7 @@ export default function BoardSettingsModal({
   const { openProfile } = useProfile();
   const [name, setName] = useState(board.name);
   const [description, setDescription] = useState(board.description ?? '');
+  const [status, setStatus] = useState<BoardStatus>(board.status);
   const [color, setColor] = useState<string | null>(board.color ?? null);
   const [leadId, setLeadId] = useState(board.leadId ?? '');
   const [start, setStart] = useState(board.startDate?.slice(0, 10) ?? '');
@@ -32,6 +34,7 @@ export default function BoardSettingsModal({
     if (open) {
       setName(board.name);
       setDescription(board.description ?? '');
+      setStatus(board.status);
       setColor(board.color ?? null);
       setLeadId(board.leadId ?? '');
       setStart(board.startDate?.slice(0, 10) ?? '');
@@ -50,6 +53,7 @@ export default function BoardSettingsModal({
     await api.patch(`/boards/${board.id}`, {
       name: name.trim(),
       description: description.trim() || null,
+      status,
       color,
       leadId: leadId || null,
       startDate: start || null,
@@ -91,6 +95,14 @@ export default function BoardSettingsModal({
         <label className="block">
           <span className="mb-1 block text-xs font-semibold text-[var(--text-dim)]">Description</span>
           <textarea className="input" rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs font-semibold text-[var(--text-dim)]">Statut</span>
+          <Select
+            value={status}
+            onChange={(v) => setStatus(v as BoardStatus)}
+            options={(Object.keys(STATUS_LABEL) as BoardStatus[]).map((s) => ({ value: s, label: STATUS_LABEL[s] }))}
+          />
         </label>
         <div className="grid grid-cols-2 gap-3">
           <label className="block">

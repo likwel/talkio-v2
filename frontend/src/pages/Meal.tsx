@@ -1,7 +1,7 @@
 import { useSearchParams } from 'react-router-dom';
-import clsx from 'clsx';
 import { IconAnalytics, IconKanban, IconForms, IconDashboard } from '@/lib/icons';
 import PageHeader from '@/components/PageHeader';
+import FilterSidebar from '@/components/FilterSidebar';
 import ProjectsPanel from '@/components/meal/ProjectsPanel';
 import FormsPanel from '@/components/meal/FormsPanel';
 import PortfolioPanel from '@/components/meal/PortfolioPanel';
@@ -23,29 +23,29 @@ export default function Meal() {
 
   return (
     <div className="flex h-full flex-col">
-      <PageHeader icon={<IconAnalytics className="h-6 w-6 shrink-0 text-[var(--accent)]" />} title="Suivi-évaluation">
-        <div className="flex rounded-lg border border-[var(--outline)] p-0.5">
-          {TABS.map(({ id, label, Icon }) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setTab(id)}
-              aria-pressed={tab === id}
-              className={clsx(
-                'flex items-center gap-1.5 rounded-md px-2.5 py-1 text-sm font-semibold transition',
-                tab === id ? 'accent-active' : 'text-[var(--text-dim)] hover:text-[var(--text)]',
-              )}
-            >
-              <Icon className="h-4 w-4" />
-              <span className="hidden sm:inline">{label}</span>
-            </button>
-          ))}
-        </div>
-      </PageHeader>
+      <PageHeader icon={<IconAnalytics className="h-6 w-6 shrink-0 text-[var(--accent)]" />} title="Suivi-évaluation" />
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="page max-w-8xl">
-          {tab === 'forms' ? <FormsPanel /> : tab === 'dashboard' ? <PortfolioPanel /> : <ProjectsPanel />}
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+            <FilterSidebar
+              title={null}
+              groups={[
+                {
+                  value: tab,
+                  onChange: (k) => setTab(k as Tab),
+                  items: TABS.map(({ id, label, Icon }) => ({
+                    key: id,
+                    label,
+                    icon: <Icon className="h-4 w-4" />,
+                  })),
+                },
+              ]}
+            />
+            <div className="min-w-0 flex-1">
+              {tab === 'forms' ? <FormsPanel /> : tab === 'dashboard' ? <PortfolioPanel /> : <ProjectsPanel />}
+            </div>
+          </div>
         </div>
       </div>
     </div>

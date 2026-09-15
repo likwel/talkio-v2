@@ -93,12 +93,14 @@ export interface Automation {
     | 'form.response.created'
     | 'card.moved.done'
     | 'card.created'
+    | 'card.overdue'
     | 'meal.measurement.created'
     | 'message.keyword'
     | 'message.command'
     | 'message.created'
     | 'member.joined'
-    | 'channel.created';
+    | 'channel.created'
+    | 'schedule.daily';
   triggerConfig: Record<string, string>;
   actionType:
     | 'message.post'
@@ -192,6 +194,7 @@ export interface Board {
   color?: string | null;
   startDate?: string | null;
   endDate?: string | null;
+  createdAt?: string;
   leadId?: string | null;
   lead?: Pick<User, 'id' | 'fullName' | 'avatarUrl'> | null;
   members?: { user: Pick<User, 'id' | 'fullName' | 'avatarUrl'> }[];
@@ -366,6 +369,61 @@ export interface QualitativeInquiry {
   updatedAt?: string;
 }
 
+export type TranscriptStatus = 'DRAFT' | 'FINAL';
+export type TranscriptReviewStep = 'ORIGINAL' | 'REVIEWED' | 'REVISED' | 'FINAL';
+
+export interface TranscriptInterviewee {
+  name?: string;
+  age?: string;
+  type?: string;
+  maritalStatus?: string;
+  profession?: string;
+}
+
+export interface TranscriptQa {
+  question: string;
+  answer?: string;
+  /** Commentaires, idées, observations du chercheur (matrice de saisie IDEAL). */
+  researcherNotes?: string;
+}
+
+/** Transcript d'entretien qualitatif (FGD, KII, entretien individuel...) rattaché à un projet. */
+export interface QualitativeTranscript {
+  id: string;
+  projectId?: string;
+  quipsId?: string | null;
+  title: string;
+  interviewType?: string | null;
+  facilitator?: string | null;
+  noteTaker?: string | null;
+  location?: string | null;
+  interviewDate?: string | null;
+  startTime?: string | null;
+  endTime?: string | null;
+  consentObtained: boolean;
+  facilitatorNotes?: string | null;
+  /** Composition du groupe (genre) et effectif — matrice de saisie IDEAL. */
+  genderMix?: string | null;
+  participantCount?: number | null;
+  interviewees: TranscriptInterviewee[];
+  qa: TranscriptQa[];
+  status: TranscriptStatus;
+
+  /** Tableau de suivi des entretiens (IDEAL). */
+  region?: string | null;
+  district?: string | null;
+  community?: string | null;
+  kiiType?: string | null;
+  sex?: string | null;
+  organizationName?: string | null;
+  marketActorType?: string | null;
+  round2Date?: string | null;
+  reviewStep: TranscriptReviewStep;
+
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface Project {
   id: string;
   workspaceId?: string;
@@ -390,6 +448,7 @@ export interface Project {
   lessons?: Lesson[];
   reports?: PeriodReport[];
   qualitativeInquiries?: QualitativeInquiry[];
+  transcripts?: QualitativeTranscript[];
   budgetTotals?: { planned: number; spent: number; rate: number | null };
   /** Agregats de la liste des projets. */
   budget?: { planned: number; spent: number; rate: number | null };

@@ -212,6 +212,7 @@ router.post(
       priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).default('MEDIUM'),
       dueDate: z.coerce.date().optional(),
       labels: z.array(z.string()).default([]),
+      assigneeId: z.string().optional(),
     }),
   ),
   asyncHandler(async (req, res) => {
@@ -228,7 +229,9 @@ router.post(
         dueDate: req.body.dueDate,
         labels: req.body.labels,
         position: count,
+        ...(req.body.assigneeId ? { assignees: { create: { userId: req.body.assigneeId } } } : {}),
       },
+      include: { assignees: { include: { user: { select: userSel } } } },
     });
     getIO()?.to(`board:${column.boardId}`).emit('board:changed', { boardId: column.boardId });
     runAutomations(column.board.workspaceId, 'card.created', {
