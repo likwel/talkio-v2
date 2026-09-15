@@ -55,6 +55,7 @@ model User {
   createdChannels        Channel[]            @relation("ChannelCreatedBy")
   assignedActivities     Activity[]           @relation("ActivityAssignee")
   ownedRisks             Risk[]               @relation("RiskOwner")
+  createdQuips           QualitativeInquiry[] @relation("QuipsCreatedBy")
   notifications          Notification[]       @relation("NotificationUser")
   notificationsActed     Notification[]       @relation("NotificationActor")
   formAssignments        FormAssignee[]       @relation("FormAssigneeUser")
@@ -469,6 +470,7 @@ model Project {
   feedback    FeedbackEntry[]
   lessons     Lesson[]
   reports     PeriodReport[]
+  qualitativeInquiries QualitativeInquiry[]
 
   @@index([workspaceId])
 }
@@ -659,6 +661,67 @@ model FeedbackEntry {
   updatedAt   DateTime       @updatedAt
 
   @@index([projectId, status])
+}
+
+enum QuipsStatus {
+  DRAFT
+  FINAL
+}
+
+/// Qualitative Inquiry Planning Sheet (QuIPS) : fiche de planification d'une
+/// enquete/etude qualitative rattachee a un projet (pre-travail, objectifs,
+/// methodologie, plan de mise en oeuvre, analyse/livrables, infos complementaires).
+model QualitativeInquiry {
+  id     String      @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// QM/QS # (numero de la fiche).
+  code   String?
+  title  String
+  status QuipsStatus @default(DRAFT)
+
+  // PRE-WORK — documents source & lacunes de preuves, equipe & parties prenantes
+  sourceDocuments String?
+  evidenceGaps    String?
+  collaborators   String?
+  reviewers       String?
+  stakeholders    String?
+
+  // SECTION 1 — Objet, objectifs, questions de recherche
+  purpose           String?
+  objectives        String?
+  researchQuestions String?
+  /// Process / Output / Outcome / Impact / Context / Crosscutting theme.
+  dataTypes         String[] @default([])
+
+  // SECTION 2 — Conception et methodologie
+  dataSources         String?
+  samplingStrategy    String?
+  dataCollectionTools String?
+
+  // SECTION 3 — Plan de mise en oeuvre
+  teamComposition        String?
+  frequencyTiming        String?
+  trainingRequirements   String?
+  dataManagement         String?
+  implementationTimeline String?
+
+  // SECTION 4 — Analyse, livrables et utilisation
+  dataAnalysisPlan       String?
+  disaggregatedBy        String?
+  deliverables           String?
+  utilizationApplication String?
+
+  // SECTION 5 — Informations complementaires
+  limitationsRisks    String?
+  ethicalReviewStatus String?
+
+  createdById String
+  createdBy   User     @relation("QuipsCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([projectId])
 }
 
 /// Registre d'apprentissage : lecons tirees de la mise en oeuvre.

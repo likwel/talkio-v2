@@ -88,4 +88,6 @@ export {
   MdTrendingUp as IconTrending,
   MdOutlineLink as IconLink,
   MdLinkOff as IconUnlink,
+  MdOutlineFactCheck as IconChecklist,
+  MdOutlinePrint as IconPrint,
 } from 'react-icons/md';

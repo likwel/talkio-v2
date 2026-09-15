@@ -78,7 +78,8 @@ type ChildModel =
   | 'lesson'
   | 'periodReport'
   | 'mealMeasurement'
-  | 'indicatorTarget';
+  | 'indicatorTarget'
+  | 'qualitativeInquiry';
 
 /** Remonte au projet a partir d'un enregistrement enfant (par son id). */
 async function projectOfChild(model: ChildModel, id: string, userId: string) {
@@ -241,6 +242,7 @@ router.get(
         feedback: { orderBy: { receivedAt: 'desc' } },
         lessons: { orderBy: { createdAt: 'desc' } },
         reports: { orderBy: { period: 'desc' } },
+        qualitativeInquiries: { orderBy: { createdAt: 'desc' } },
       },
     });
 
@@ -908,6 +910,85 @@ router.delete(
   asyncHandler(async (req, res) => {
     await projectOfChild('periodReport', req.params.reportId, req.user!.id);
     await prisma.periodReport.delete({ where: { id: req.params.reportId } });
+    res.status(204).end();
+  }),
+);
+
+// ======================================================================
+//  Qualitative Inquiry Planning Sheet (QuIPS)
+// ======================================================================
+
+const quipsBody = z.object({
+  code: z.string().max(60).nullable().optional(),
+  title: z.string().min(2),
+  status: z.enum(['DRAFT', 'FINAL']).optional(),
+
+  sourceDocuments: z.string().nullable().optional(),
+  evidenceGaps: z.string().nullable().optional(),
+  collaborators: z.string().nullable().optional(),
+  reviewers: z.string().nullable().optional(),
+  stakeholders: z.string().nullable().optional(),
+
+  purpose: z.string().nullable().optional(),
+  objectives: z.string().nullable().optional(),
+  researchQuestions: z.string().nullable().optional(),
+  dataTypes: z.array(z.string().max(40)).max(10).optional(),
+
+  dataSources: z.string().nullable().optional(),
+  samplingStrategy: z.string().nullable().optional(),
+  dataCollectionTools: z.string().nullable().optional(),
+
+  teamComposition: z.string().nullable().optional(),
+  frequencyTiming: z.string().nullable().optional(),
+  trainingRequirements: z.string().nullable().optional(),
+  dataManagement: z.string().nullable().optional(),
+  implementationTimeline: z.string().nullable().optional(),
+
+  dataAnalysisPlan: z.string().nullable().optional(),
+  disaggregatedBy: z.string().nullable().optional(),
+  deliverables: z.string().nullable().optional(),
+  utilizationApplication: z.string().nullable().optional(),
+
+  limitationsRisks: z.string().nullable().optional(),
+  ethicalReviewStatus: z.string().nullable().optional(),
+});
+
+router.post(
+  '/projects/:id/quips',
+  validate(quipsBody),
+  asyncHandler(async (req, res) => {
+    const project = await loadProject(req.params.id, req.user!.id);
+    const row = await prisma.qualitativeInquiry.create({
+      data: { ...req.body, projectId: project.id, createdById: req.user!.id },
+    });
+    res.status(201).json(row);
+  }),
+);
+
+router.get(
+  '/quips/:quipsId',
+  asyncHandler(async (req, res) => {
+    await projectOfChild('qualitativeInquiry', req.params.quipsId, req.user!.id);
+    const row = await prisma.qualitativeInquiry.findUnique({ where: { id: req.params.quipsId } });
+    res.json(row);
+  }),
+);
+
+router.patch(
+  '/quips/:quipsId',
+  validate(quipsBody.partial()),
+  asyncHandler(async (req, res) => {
+    await projectOfChild('qualitativeInquiry', req.params.quipsId, req.user!.id);
+    const row = await prisma.qualitativeInquiry.update({ where: { id: req.params.quipsId }, data: req.body });
+    res.json(row);
+  }),
+);
+
+router.delete(
+  '/quips/:quipsId',
+  asyncHandler(async (req, res) => {
+    await projectOfChild('qualitativeInquiry', req.params.quipsId, req.user!.id);
+    await prisma.qualitativeInquiry.delete({ where: { id: req.params.quipsId } });
     res.status(204).end();
   }),
 );

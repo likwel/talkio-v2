@@ -323,6 +323,49 @@ export interface PeriodReport {
   createdAt: string;
 }
 
+export type QuipsStatus = 'DRAFT' | 'FINAL';
+
+/** Qualitative Inquiry Planning Sheet (QuIPS) : fiche de planification d'une enquête qualitative. */
+export interface QualitativeInquiry {
+  id: string;
+  projectId?: string;
+  code?: string | null;
+  title: string;
+  status: QuipsStatus;
+
+  sourceDocuments?: string | null;
+  evidenceGaps?: string | null;
+  collaborators?: string | null;
+  reviewers?: string | null;
+  stakeholders?: string | null;
+
+  purpose?: string | null;
+  objectives?: string | null;
+  researchQuestions?: string | null;
+  dataTypes: string[];
+
+  dataSources?: string | null;
+  samplingStrategy?: string | null;
+  dataCollectionTools?: string | null;
+
+  teamComposition?: string | null;
+  frequencyTiming?: string | null;
+  trainingRequirements?: string | null;
+  dataManagement?: string | null;
+  implementationTimeline?: string | null;
+
+  dataAnalysisPlan?: string | null;
+  disaggregatedBy?: string | null;
+  deliverables?: string | null;
+  utilizationApplication?: string | null;
+
+  limitationsRisks?: string | null;
+  ethicalReviewStatus?: string | null;
+
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface Project {
   id: string;
   workspaceId?: string;
@@ -346,6 +389,7 @@ export interface Project {
   feedback?: FeedbackEntry[];
   lessons?: Lesson[];
   reports?: PeriodReport[];
+  qualitativeInquiries?: QualitativeInquiry[];
   budgetTotals?: { planned: number; spent: number; rate: number | null };
   /** Agregats de la liste des projets. */
   budget?: { planned: number; spent: number; rate: number | null };

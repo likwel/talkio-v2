@@ -10,6 +10,7 @@ import { PROJECT_HEALTH, PROJECT_STATUS, projectTint } from '@/components/meal/m
 import OverviewTab from '@/components/meal/project/OverviewTab';
 import LogframeTab from '@/components/meal/project/LogframeTab';
 import FormsTab from '@/components/meal/project/FormsTab';
+import QuipsTab from '@/components/meal/project/QuipsTab';
 import WorkplanTab from '@/components/meal/project/WorkplanTab';
 import BudgetTab from '@/components/meal/project/BudgetTab';
 import AnalyseTab from '@/components/meal/project/AnalyseTab';
@@ -44,7 +45,10 @@ const PHASES = [
     n: 3,
     name: 'Collecte',
     hint: 'Formulaires et données de terrain',
-    tabs: [{ id: 'collecte', label: 'Collecte' }],
+    tabs: [
+      { id: 'collecte', label: 'Collecte' },
+      { id: 'quips', label: 'Enquêtes qualitatives' },
+    ],
   },
   {
     n: 4,
@@ -217,6 +221,7 @@ export default function ProjectDetail() {
       {tab === 'overview' && <OverviewTab project={p} goTab={setTab} />}
       {tab === 'logframe' && <LogframeTab project={p} reload={reload} />}
       {tab === 'collecte' && <FormsTab project={p} />}
+      {tab === 'quips' && <QuipsTab project={p} reload={reload} />}
       {tab === 'workplan' && <WorkplanTab project={p} reload={reload} />}
       {tab === 'budget' && <BudgetTab project={p} reload={reload} />}
       {tab === 'analyse' && <AnalyseTab project={p} />}
